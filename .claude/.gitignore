@@ -1,0 +1,22 @@
+# Runtime and cache files
+cache/
+debug/
+downloads/
+file-history/
+paste-cache/
+plans/
+plugins/
+projects/
+session-env/
+shell-snapshots/
+statsig/
+telemetry/
+todos/
+
+# Data files
+history.jsonl
+stats-cache.json
+
+# Auto-generated
+agents/
+CLAUDE.md
