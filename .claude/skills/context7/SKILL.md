@@ -1,7 +1,6 @@
 ---
 name: context7
 description: Fetch up-to-date library documentation using Context7 API. Use this skill when the user asks for docs, examples, or help with a specific library/framework (e.g., "look up React docs", "context7 nextjs routing", "fetch docs for fastapi").
-allowed-tools: WebFetch
 ---
 
 # Context7 Documentation Fetcher
@@ -45,18 +44,12 @@ This returns ranked code snippets and documentation matching your query.
 When the user asks about a library:
 
 1. **Search for the library**:
-   Use WebFetch to call:
-   ```
-   https://context7.com/api/v2/libs/search?libraryName=nextjs&query=routing
-   ```
+   Fetch `https://context7.com/api/v2/libs/search?libraryName=nextjs&query=routing`
    Extract the library ID from the response (e.g., "/vercel/next.js")
 
 2. **Fetch documentation**:
-   Use WebFetch to call:
-   ```
-   https://context7.com/api/v2/context?libraryId=/vercel/next.js&query=How to setup dynamic routes
-   ```
-
+   Fetch `https://context7.com/api/v2/context?libraryId=/vercel/next.js&query=How to setup dynamic routes`
+   
 3. **Present the results** to the user with the relevant code examples and documentation.
 
 ## Tips for Best Results
