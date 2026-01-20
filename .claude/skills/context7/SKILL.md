@@ -65,12 +65,3 @@ When the user asks about a library:
 - Include relevant context in the query (e.g., "useState hook with TypeScript" instead of just "state")
 - The API works without an API key but has restricted rate limits
 
-## Handling Responses
-
-| Status | Meaning | Action |
-|--------|---------|--------|
-| 200 | Success | Process and present results |
-| 202 | Processing | Library still indexing; inform user to try later |
-| 301 | Redirect | Use the `redirectUrl` from response |
-| 429 | Rate Limited | Inform user about rate limit; suggest waiting |
-| 404 | Not Found | Library doesn't exist; suggest alternative search |
