@@ -1,13 +1,8 @@
 {
   "permissions": {
-    "allow": [
-      "mcp__playwriter__execute",
-      "mcp__playwriter__reset"
-    ]
+    "allow": []
   },
   "enabledPlugins": {
-    "ralph-loop@claude-plugins-official": false,
-    "canvas@claude-canvas": true,
-    "open-prose@prose": false
+    "canvas@claude-canvas": true
   }
 }
