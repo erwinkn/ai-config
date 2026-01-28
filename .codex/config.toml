@@ -1,6 +1,15 @@
 model = "gpt-5.2-codex"
 model_reasoning_effort = "xhigh"
 sandbox_mode = "danger-full-access"
+suppress_unstable_features_warning = true
+collab = true
+collaboration_modes = true
+
+[features]
+web_search_request = true
+unified_exec = true
+shell_snapshot = true
+steer = true
 
 [projects."/Users/erwin/Code/pulse-ui"]
 trust_level = "trusted"
@@ -17,14 +26,7 @@ trust_level = "trusted"
 [projects."/Users/erwin/Code/cartomancer"]
 trust_level = "trusted"
 
-[features]
-web_search_request = true
-unified_exec = true
-shell_snapshot = true
-steer = true
 
-collab = true
-collaboration_modes = true
 [notice]
 hide_gpt5_1_migration_prompt = true
 "hide_gpt-5.1-codex-max_migration_prompt" = true
