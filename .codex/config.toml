@@ -1,15 +1,18 @@
 model = "gpt-5.2-codex"
-model_reasoning_effort = "high"
+model_reasoning_effort = "medium"
 sandbox_mode = "danger-full-access"
-suppress_unstable_features_warning = true
+web_search = "live"
+suppress_unstable_features_warning = false
 collab = true
-collaboration_modes = true
+# collaboration_modes = true
+model_personality = "pragmatic"
+personality = "pragmatic"
 
 [features]
-web_search_request = true
 unified_exec = true
 shell_snapshot = true
 steer = true
+personality = true
 
 [projects."/Users/erwin/Code/pulse-ui"]
 trust_level = "trusted"
@@ -25,6 +28,9 @@ trust_level = "trusted"
 
 [projects."/Users/erwin/Code/cartomancer"]
 trust_level = "trusted"
+
+[projects."/Users/erwin/conductor/repo/pulse-ui/montgomery"]
+trust_level="trusted"
 
 
 [notice]
