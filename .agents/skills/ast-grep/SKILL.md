@@ -66,7 +66,7 @@ rule:
     stopBy: end
 ```
 
-See `rules-reference.md` for comprehensive rule documentation.
+See `references/rules-reference.md` for comprehensive rule documentation.
 
 ### Step 4: Test the Rule
 
@@ -316,5 +316,5 @@ rule:
 
 ## Resources
 
-### rules-reference.md
+### references/rules-reference.md
 Contains comprehensive ast-grep rule documentation covering atomic rules, relational rules, composite rules, and metavariables. Load the reference when detailed rule syntax information is needed.

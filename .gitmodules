@@ -1,0 +1,6 @@
+[submodule "vendor/tirith"]
+	path = vendor/tirith
+	url = https://github.com/sheeki03/tirith
+[submodule "vendor/opensrc-mcp"]
+	path = vendor/opensrc-mcp
+	url = https://github.com/dmmulroy/opensrc-mcp.git

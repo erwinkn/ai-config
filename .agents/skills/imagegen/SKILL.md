@@ -5,7 +5,7 @@ description: This skill should be used when generating and editing images using 
 
 # Gemini Image Generation (Nano Banana Pro)
 
-Generate and edit images using Google's Gemini API. Use `op run -- uv run ...` to run Python scripts.
+Generate and edit images using Google's Gemini API. Use `skillx imagegen ...` for all CLI operations.
 
 ## Default Model
 
@@ -28,15 +28,15 @@ Generate and edit images using Google's Gemini API. Use `op run -- uv run ...` t
 ### Available Resolutions
 `1K` (default), `2K`, `4K`
 
-## CLI Scripts
+## CLI Commands
 
-Ready-to-use scripts for common tasks. All scripts are in the `scripts/` directory.
+Ready-to-use commands for common tasks.
 
 ### Generate Image from Text
 
 ```bash
-op run -- uv run scripts/generate.py "A sunset over mountains" -o sunset.jpg
-op run -- uv run scripts/generate.py "A minimalist logo" --aspect 1:1 --size 2K -o logo.jpg
+skillx imagegen generate "A sunset over mountains" -o sunset.jpg
+skillx imagegen generate "A minimalist logo" --aspect 1:1 --size 2K -o logo.jpg
 ```
 
 Options:
@@ -47,8 +47,8 @@ Options:
 ### Edit an Existing Image
 
 ```bash
-op run -- uv run scripts/edit.py input.jpg "Add a sunset to the sky" -o edited.jpg
-op run -- uv run scripts/edit.py photo.png "Make it look like a watercolor painting" --size 2K
+skillx imagegen edit input.jpg "Add a sunset to the sky" -o edited.jpg
+skillx imagegen edit photo.png "Make it look like a watercolor painting" --size 2K
 ```
 
 Options:
@@ -58,8 +58,8 @@ Options:
 ### Compose Multiple Images
 
 ```bash
-op run -- uv run scripts/compose.py "Create a group photo in an office" person1.jpg person2.jpg -o group.jpg
-op run -- uv run scripts/compose.py "Combine these into a collage" img1.png img2.png img3.png --aspect 16:9
+skillx imagegen compose "Create a group photo in an office" person1.jpg person2.jpg -o group.jpg
+skillx imagegen compose "Combine these into a collage" img1.png img2.png img3.png --aspect 16:9
 ```
 
 Options:
