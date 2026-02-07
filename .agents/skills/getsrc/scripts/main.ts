@@ -2,10 +2,10 @@
 
 import { spawnSync, type SpawnSyncReturns } from "node:child_process";
 import { existsSync } from "node:fs";
-import { mkdir, readFile, readdir, stat } from "node:fs/promises";
+import { mkdir, readFile, readdir, rm, stat } from "node:fs/promises";
 import { homedir } from "node:os";
 import { dirname, extname, join, resolve } from "node:path";
-import { fileURLToPath } from "node:url";
+import { createInterface } from "node:readline";
 
 type RegistryType = "npm" | "pypi" | "crates";
 type SourceType = RegistryType | "repo";
@@ -39,6 +39,11 @@ interface Source {
   path: string;
   fetchedAt: string;
   repository: string | null;
+}
+
+interface SourceView extends Source {
+  id: string;
+  label: string;
 }
 
 interface ParsedArgs {
@@ -101,13 +106,48 @@ interface AstGrepMatch {
   metavars: Record<string, string>;
 }
 
+interface TreeNode {
+  name: string;
+  type: "dir" | "file";
+  children?: TreeNode[];
+}
+
+interface ReadSlice {
+  start: number;
+  end: number;
+  total: number;
+  lines: string[];
+}
+
+interface RenderOptions {
+  fields: string[] | null;
+  maxItems: number | null;
+  maxChars: number | null;
+  maxCharsProvided: boolean;
+  noMeta: boolean;
+  noNull: boolean;
+  logs: boolean;
+  long: boolean;
+}
+
+interface CommandContext {
+  getsrcDir: string;
+  getsrcCwd: string;
+  readUnifiedSources: () => Promise<{ index: SourcesIndex; sources: SourceView[] }>;
+}
+
 const IGNORED_DIRS = new Set([".git", "node_modules"]);
 const DEFAULT_MAX_RESULTS = 100;
-const DEFAULT_AST_LIMIT = 1000;
-const SCRIPT_DIR = dirname(fileURLToPath(import.meta.url));
-const SKILL_ROOT = dirname(SCRIPT_DIR);
+const DEFAULT_AST_LIMIT = 250;
+const DEFAULT_MAX_CHARS = 8_000;
+const DEFAULT_MATCH_SNIPPET_CHARS = 220;
+const DEFAULT_ROW_VALUE_CHARS = 320;
+const DEFAULT_TREE_LINES = 120;
+const DEFAULT_READ_CONTEXT = 20;
+const MUTATION_LOCK_NAME = ".getsrc-mutation.lock";
+const MUTATION_LOCK_TIMEOUT_MS = 20_000;
+const MUTATION_LOCK_RETRY_MS = 120;
 const AST_GREP_PACKAGE = "@ast-grep/napi";
-const AST_GREP_NODE_MODULE = join(SKILL_ROOT, "node_modules", "@ast-grep", "napi");
 const GETSRC_DIR_ENV = "GETSRC_DIR";
 const LEGACY_DIR_ENV = `OPEN${"SRC_DIR"}`;
 const LEGACY_STORE_NAME = `open${"src"}`;
@@ -135,26 +175,41 @@ const AST_STR_LANG_KEYS: Record<string, string> = {
 };
 
 function usage(): void {
-  console.error(`dep-source: fetch/query dependency source code without MCP
+  console.error(`getsrc: fetch/query dependency source code without MCP
 
 Usage:
-  dep-source.ts list
-  dep-source.ts has <name> [--version <version>]
-  dep-source.ts get <name>
-  dep-source.ts resolve <spec>
-  dep-source.ts fetch <spec...> [--modify true|false]
-  dep-source.ts remove <name...>
-  dep-source.ts clean [--packages] [--repos] [--npm] [--pypi] [--crates]
-  dep-source.ts files <source> [--glob <pattern>]
-  dep-source.ts tree <source> [--depth <n>] [--pattern <glob>]
-  dep-source.ts grep <pattern> [--sources <a,b>] [--include <glob>] [--max-results <n>]
-  dep-source.ts ast-grep <source> <pattern> [--glob <glob>] [--lang <lang|a,b>] [--limit <n>]
-  dep-source.ts read <source> <path>
-  dep-source.ts read-many <source> <path...>
+  skillx getsrc list [--fields f1,f2] [--max-items N]
+  skillx getsrc has <name|id> [--version <version>]
+  skillx getsrc get <source|id>
+  skillx getsrc resolve <spec>
+  skillx getsrc fetch <spec...> [--modify true|false] [--logs true]
+  skillx getsrc remove <source|id...> [--logs true]
+  skillx getsrc clean [--packages] [--repos] [--npm] [--pypi] [--crates] [--logs true]
+  skillx getsrc files <source|id> [--glob <pattern>] [--type file|dir|all] [--fields f1,f2] [--max-items N]
+  skillx getsrc tree <source|id> [--depth N] [--pattern <glob>] [--max-items N]
+  skillx getsrc grep <pattern> [--sources <a,b>] [--include <glob>] [--max-results N] [--ignore-case true|false]
+  skillx getsrc ast-grep <source|id> <pattern> [--glob <glob>] [--lang <lang|a,b>] [--limit N]
+  skillx getsrc read <source|id> <path> [--start N --end N] [--around N --before N --after N]
+  skillx getsrc read-many <source|id> <path...> [--start N --end N] [--around N --before N --after N]
+  skillx getsrc batch "<cmd...>" "<cmd...>" [...]
+  skillx getsrc serve
 
-Repo specs:
-  gh:owner/repo[@ref]
-  github:owner/repo[@ref] (also accepted)
+Global output flags:
+  --fields <a,b,c>   Select output fields for row-based commands
+  --max-items <n>    Cap number of rows/files/lines shown
+  --max-chars <n>    Cap read/search payload size (search snippets default to ${DEFAULT_MATCH_SNIPPET_CHARS})
+  --no-meta true     Omit summary headers
+  --no-null true     Omit null/empty fields in rows
+  --long true        Include extra metadata fields
+  --logs true        Include backend stdout/stderr for fetch/remove/clean
+
+Source selectors:
+  Most commands accept source name or source id from list (e.g., s_2p3r1m)
+
+Batch:
+  Each positional arg is one subcommand string (without the leading 'getsrc').
+  Example:
+    skillx getsrc batch "fetch npm:react@18.3.1" "grep useState --sources s_abc123"
 `);
 }
 
@@ -199,6 +254,13 @@ function toInt(value: string | boolean | undefined, fallback: number): number {
   return Number.isFinite(n) ? n : fallback;
 }
 
+function toOptionalInt(value: string | boolean | undefined): number | null {
+  if (value === undefined || value === null || value === "") return null;
+  const n = Number.parseInt(String(value), 10);
+  if (!Number.isFinite(n)) return null;
+  return n;
+}
+
 function toBool(value: string | boolean | undefined, fallback = false): boolean {
   if (value === undefined) return fallback;
   if (typeof value === "boolean") return value;
@@ -206,6 +268,52 @@ function toBool(value: string | boolean | undefined, fallback = false): boolean 
   if (s === "true" || s === "1" || s === "yes" || s === "on") return true;
   if (s === "false" || s === "0" || s === "no" || s === "off") return false;
   return fallback;
+}
+
+function parseCsv(value: string | boolean | undefined): string[] | null {
+  if (typeof value !== "string") return null;
+  const out = value
+    .split(",")
+    .map((part) => part.trim())
+    .filter(Boolean);
+  return out.length > 0 ? out : null;
+}
+
+function parsePositiveIntFlag(name: string, value: string | boolean | undefined): number | undefined {
+  if (value === undefined) return undefined;
+  const n = Number.parseInt(String(value), 10);
+  if (!Number.isFinite(n) || n <= 0) {
+    throw new Error(`--${name} must be a positive integer`);
+  }
+  return n;
+}
+
+function buildRenderOptions(flags: Record<string, string | boolean>, inherited?: RenderOptions): RenderOptions {
+  const localMaxItems = parsePositiveIntFlag("max-items", flags["max-items"]);
+  const localMaxChars = parsePositiveIntFlag("max-chars", flags["max-chars"]);
+  const hasLocalMaxChars = localMaxChars !== undefined;
+  return {
+    fields: parseCsv(flags.fields) ?? inherited?.fields ?? null,
+    maxItems: localMaxItems ?? inherited?.maxItems ?? null,
+    maxChars: localMaxChars ?? inherited?.maxChars ?? null,
+    maxCharsProvided: hasLocalMaxChars || (inherited?.maxCharsProvided ?? false),
+    noMeta:
+      flags["no-meta"] !== undefined
+        ? toBool(flags["no-meta"], false)
+        : (inherited?.noMeta ?? false),
+    noNull:
+      flags["no-null"] !== undefined
+        ? toBool(flags["no-null"], false)
+        : (inherited?.noNull ?? true),
+    logs:
+      flags.logs !== undefined
+        ? toBool(flags.logs, false)
+        : (inherited?.logs ?? false),
+    long:
+      flags.long !== undefined
+        ? toBool(flags.long, false)
+        : (inherited?.long ?? false),
+  };
 }
 
 function getPaths(): { getsrcDir: string; getsrcCwd: string } {
@@ -229,10 +337,11 @@ function getPaths(): { getsrcDir: string; getsrcCwd: string } {
   const preferredDir = join(xdgData, GETSRC_STORE_NAME);
   const fallbackDir = join(xdgData, LEGACY_STORE_NAME);
   const preferredHasIndex = existsSync(join(preferredDir, "sources.json"));
-  const fallbackHasIndex = existsSync(join(fallbackDir, "sources.json"));
 
   return {
-    getsrcDir: preferredHasIndex || !fallbackHasIndex ? preferredDir : fallbackDir,
+    // Backend CLI still writes to the legacy store by default.
+    // Prefer the new store only when it already has an index.
+    getsrcDir: preferredHasIndex ? preferredDir : fallbackDir,
     getsrcCwd: xdgData,
   };
 }
@@ -261,7 +370,28 @@ async function readSourcesIndex(getsrcDir: string): Promise<SourcesIndex> {
   };
 }
 
-function toUnifiedSources(index: SourcesIndex): Source[] {
+function shortHash(input: string): string {
+  let hash = 0x811c9dc5;
+  for (let i = 0; i < input.length; i += 1) {
+    hash ^= input.charCodeAt(i);
+    hash = Math.imul(hash, 0x01000193);
+  }
+  const normalized = hash >>> 0;
+  return normalized.toString(36);
+}
+
+function sourceKey(source: Source): string {
+  return `${source.type}:${source.name}:${source.version ?? source.ref ?? ""}`;
+}
+
+function sourceLabel(source: Source): string {
+  if (source.type === "repo") {
+    return source.ref ? `${source.name}@${source.ref}` : source.name;
+  }
+  return source.version ? `${source.name}@${source.version}` : source.name;
+}
+
+function toUnifiedSources(index: SourcesIndex): SourceView[] {
   const out: Source[] = [];
 
   for (const pkg of index.packages) {
@@ -288,15 +418,34 @@ function toUnifiedSources(index: SourcesIndex): Source[] {
     });
   }
 
-  return out;
+  return out.map((source) => {
+    const id = `s_${shortHash(sourceKey(source))}`;
+    return {
+      ...source,
+      id,
+      label: sourceLabel(source),
+    };
+  });
 }
 
-function getSourceOrThrow(sources: Source[], name: string): Source {
-  const found = sources.find((s) => s.name === name);
-  if (!found) {
-    throw new Error(`Source not found: ${name}`);
+function resolveSourceOrThrow(sources: SourceView[], token: string): SourceView {
+  const exactName = sources.filter((s) => s.name === token);
+  if (exactName.length === 1) return exactName[0];
+  if (exactName.length > 1) {
+    const ids = exactName.map((s) => s.id).join(", ");
+    throw new Error(`Source name is ambiguous: ${token}. Use source id (${ids}) instead.`);
   }
-  return found;
+
+  const exactId = sources.find((s) => s.id === token);
+  if (exactId) return exactId;
+
+  const prefixMatches = sources.filter((s) => s.id.startsWith(token));
+  if (prefixMatches.length === 1) return prefixMatches[0];
+  if (prefixMatches.length > 1) {
+    throw new Error(`Source id prefix is ambiguous: ${token}`);
+  }
+
+  throw new Error(`Source not found: ${token}`);
 }
 
 function resolveInRoot(root: string, relativePath: string): string {
@@ -460,7 +609,7 @@ function runCmd(command: string, args: string[], cwd: string): {
   const result: SpawnSyncReturns<string> = spawnSync(command, args, {
     cwd,
     encoding: "utf8",
-    maxBuffer: 10 * 1024 * 1024,
+    maxBuffer: 20 * 1024 * 1024,
   });
 
   return {
@@ -479,24 +628,12 @@ function runGetsrcBackend(args: string[], getsrcCwd: string): { stdout: string; 
   return result;
 }
 
-function ensureAstGrepDependencyInstalled(): boolean {
-  if (existsSync(AST_GREP_NODE_MODULE)) return false;
-
-  const install = runCmd("npm", ["install", "--prefix", SKILL_ROOT, "--no-save", AST_GREP_PACKAGE], SKILL_ROOT);
-  if (install.status !== 0) {
-    const detail = install.stderr || install.stdout || "npm install failed";
-    throw new Error(`Failed to auto-install ast-grep dependency: ${detail.trim()}`);
-  }
-
-  return true;
-}
-
 async function loadAstGrepNapi(): Promise<AstGrepNapiModule> {
   try {
     return (await import(AST_GREP_PACKAGE)) as AstGrepNapiModule;
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
-    throw new Error(`Failed to load ast-grep dependency: ${msg}`);
+    throw new Error(`Failed to load ast-grep dependency: ${msg}. Enable Bun auto-install or preinstall @ast-grep/napi.`);
   }
 }
 
@@ -638,399 +775,958 @@ async function walkAllEntries(
   }
 }
 
-async function main(): Promise<void> {
-  const { positional, flags } = parseArgv(process.argv.slice(2));
+function clipText(text: string, maxChars: number | null): { text: string; truncated: boolean } {
+  if (!Number.isFinite(maxChars as number) || maxChars === null || maxChars <= 0) {
+    return { text, truncated: false };
+  }
+  if (text.length <= maxChars) {
+    return { text, truncated: false };
+  }
+  return {
+    text: `${text.slice(0, maxChars)}\n... [truncated ${text.length - maxChars} chars]`,
+    truncated: true,
+  };
+}
+
+function oneLine(text: string): string {
+  return text.replace(/\s+/g, " ").trim();
+}
+
+function formatScalar(value: unknown, options: RenderOptions, collapse = true): string {
+  if (value === null || value === undefined) return "-";
+  const scalarLimit = DEFAULT_ROW_VALUE_CHARS;
+  if (typeof value === "string") {
+    const base = collapse ? oneLine(value) : value;
+    const clipped = clipText(base, scalarLimit).text.replace(/\n+/g, " ");
+    if (collapse) return clipped;
+    return clipped;
+  }
+  if (typeof value === "number" || typeof value === "boolean") {
+    return String(value);
+  }
+  if (Array.isArray(value)) {
+    return value.map((v) => formatScalar(v, options, true)).join(",");
+  }
+  return clipText(JSON.stringify(value), scalarLimit).text.replace(/\n+/g, " ");
+}
+
+function pickFields(defaultFields: string[], options: RenderOptions): string[] {
+  if (!options.fields || options.fields.length === 0) return defaultFields;
+  return options.fields;
+}
+
+function formatRows(
+  rows: Array<Record<string, unknown>>,
+  defaultFields: string[],
+  options: RenderOptions,
+  meta?: { title?: string; total?: number }
+): string {
+  const selectedFields = pickFields(defaultFields, options);
+  const maxItems = options.maxItems ?? rows.length;
+  const shown = rows.slice(0, Math.max(0, maxItems));
+
+  const lines: string[] = [];
+  if (!options.noMeta) {
+    const total = meta?.total ?? rows.length;
+    const title = meta?.title ?? "rows";
+    lines.push(`${title}: ${shown.length}/${total}`);
+  }
+
+  for (const row of shown) {
+    const parts: string[] = [];
+    for (const field of selectedFields) {
+      if (!(field in row)) continue;
+      const value = row[field];
+      if (options.noNull && (value === null || value === undefined || value === "")) continue;
+      parts.push(`${field}=${formatScalar(value, options)}`);
+    }
+    lines.push(parts.length > 0 ? `- ${parts.join(" | ")}` : "- (empty)");
+  }
+
+  if (rows.length > shown.length) {
+    lines.push(`... +${rows.length - shown.length} more`);
+  }
+
+  return lines.join("\n");
+}
+
+function buildSourceRow(source: SourceView, options: RenderOptions): Record<string, unknown> {
+  return {
+    id: source.id,
+    type: source.type,
+    name: source.name,
+    label: source.label,
+    version: source.version ?? null,
+    ref: source.ref ?? null,
+    path: source.path,
+    repository: source.repository,
+    fetchedAt: source.fetchedAt,
+    ...(options.long ? { key: sourceKey(source) } : {}),
+  };
+}
+
+function fileIdFor(sourceId: string, path: string): string {
+  return `f_${shortHash(`${sourceId}:${path}`)}`;
+}
+
+function splitCommandLine(line: string): string[] {
+  const out: string[] = [];
+  let current = "";
+  let quote: "'" | '"' | null = null;
+  let escaped = false;
+
+  for (let i = 0; i < line.length; i += 1) {
+    const ch = line[i];
+
+    if (escaped) {
+      current += ch;
+      escaped = false;
+      continue;
+    }
+
+    if (ch === "\\") {
+      escaped = true;
+      continue;
+    }
+
+    if (quote) {
+      if (ch === quote) {
+        quote = null;
+      } else {
+        current += ch;
+      }
+      continue;
+    }
+
+    if (ch === '"' || ch === "'") {
+      quote = ch;
+      continue;
+    }
+
+    if (/\s/.test(ch)) {
+      if (current.length > 0) {
+        out.push(current);
+        current = "";
+      }
+      continue;
+    }
+
+    current += ch;
+  }
+
+  if (current.length > 0) {
+    out.push(current);
+  }
+
+  return out;
+}
+
+async function readPipedStdin(): Promise<string> {
+  if (process.stdin.isTTY) return "";
+
+  let data = "";
+  for await (const chunk of process.stdin) {
+    data += String(chunk);
+  }
+  return data;
+}
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolveSleep) => {
+    setTimeout(resolveSleep, ms);
+  });
+}
+
+async function withMutationLock<T>(getsrcDir: string, run: () => Promise<T>): Promise<T> {
+  const lockPath = join(getsrcDir, MUTATION_LOCK_NAME);
+  await mkdir(getsrcDir, { recursive: true });
+  const startedAt = Date.now();
+
+  while (true) {
+    try {
+      await mkdir(lockPath);
+      break;
+    } catch (err) {
+      const code = (err as NodeJS.ErrnoException | null)?.code;
+      if (code !== "EEXIST") {
+        throw err;
+      }
+
+      if (Date.now() - startedAt > MUTATION_LOCK_TIMEOUT_MS) {
+        throw new Error(`Timed out waiting for mutation lock (${MUTATION_LOCK_TIMEOUT_MS}ms)`);
+      }
+
+      await sleep(MUTATION_LOCK_RETRY_MS);
+    }
+  }
+
+  try {
+    return await run();
+  } finally {
+    await rm(lockPath, { recursive: true, force: true });
+  }
+}
+
+function computeReadSlice(
+  content: string,
+  flags: Record<string, string | boolean>
+): ReadSlice {
+  const lines = content.split("\n");
+  const total = lines.length;
+  if (total === 0) {
+    return { start: 0, end: 0, total: 0, lines: [] };
+  }
+
+  const around = toOptionalInt(flags.around);
+  const before = Math.max(0, toOptionalInt(flags.before) ?? DEFAULT_READ_CONTEXT);
+  const after = Math.max(0, toOptionalInt(flags.after) ?? DEFAULT_READ_CONTEXT);
+
+  let start = Math.max(1, toOptionalInt(flags.start) ?? 1);
+  let end = Math.max(start, toOptionalInt(flags.end) ?? total);
+
+  if (around !== null) {
+    const center = Math.min(Math.max(1, around), total);
+    start = Math.max(1, center - before);
+    end = Math.min(total, center + after);
+  }
+
+  start = Math.min(start, total);
+  end = Math.min(Math.max(start, end), total);
+
+  const selected = lines.slice(start - 1, end);
+  return {
+    start,
+    end,
+    total,
+    lines: selected,
+  };
+}
+
+function renderReadSlice(
+  path: string,
+  slice: ReadSlice,
+  options: RenderOptions,
+  raw: boolean
+): string {
+  const body = raw
+    ? slice.lines.join("\n")
+    : slice.lines
+        .map((line, idx) => {
+          const lineNo = slice.start + idx;
+          return `${String(lineNo).padStart(5, " ")} | ${line}`;
+        })
+        .join("\n");
+
+  const clipLimit = options.maxCharsProvided ? options.maxChars : DEFAULT_MAX_CHARS;
+  const clipped = clipText(body, clipLimit).text;
+
+  if (options.noMeta) return clipped;
+  return [
+    `path: ${path}`,
+    `range: ${slice.start}-${slice.end} of ${slice.total}`,
+    clipped,
+  ].join("\n");
+}
+
+async function buildTree(
+  sourceRoot: string,
+  rootName: string,
+  depth: number,
+  pattern: string | null
+): Promise<TreeNode | null> {
+  const matcher = pattern ? globToRegex(pattern) : null;
+
+  async function buildNode(absDir: string, relDir: string, level: number): Promise<TreeNode | null> {
+    if (level > depth) return null;
+
+    const children: TreeNode[] = [];
+    const dirents = await readdir(absDir, { withFileTypes: true });
+
+    for (const dirent of dirents) {
+      if (shouldSkipName(dirent.name)) continue;
+
+      const relPath = relDir ? `${relDir}/${dirent.name}` : dirent.name;
+      const absPath = join(absDir, dirent.name);
+
+      if (dirent.isDirectory()) {
+        const child = await buildNode(absPath, relPath, level + 1);
+        const dirMatches = !matcher || matcher.test(relPath) || matcher.test(`${relPath}/`);
+        if (child && (dirMatches || (child.children && child.children.length > 0))) {
+          children.push(child);
+        }
+      } else if (!matcher || matcher.test(relPath)) {
+        children.push({ name: dirent.name, type: "file" });
+      }
+    }
+
+    children.sort((a, b) => a.name.localeCompare(b.name));
+    const nodeName = relDir ? relDir.split("/").at(-1) ?? relDir : rootName;
+    return { name: nodeName, type: "dir", children };
+  }
+
+  return buildNode(sourceRoot, "", 1);
+}
+
+function renderTreeLines(node: TreeNode): string[] {
+  const lines: string[] = [];
+
+  function walk(current: TreeNode, prefix: string, isLast: boolean, isRoot: boolean): void {
+    const connector = isRoot ? "" : (isLast ? "`-- " : "|-- ");
+    const suffix = current.type === "dir" ? "/" : "";
+    lines.push(`${prefix}${connector}${current.name}${suffix}`);
+
+    if (!current.children || current.children.length === 0) return;
+
+    const childPrefix = isRoot ? "" : `${prefix}${isLast ? "    " : "|   "}`;
+    current.children.forEach((child, index) => {
+      const childIsLast = index === current.children!.length - 1;
+      walk(child, childPrefix, childIsLast, false);
+    });
+  }
+
+  walk(node, "", true, true);
+  return lines;
+}
+
+async function runCommand(parsed: ParsedArgs, context: CommandContext, inheritedRender?: RenderOptions): Promise<string> {
+  const { positional, flags } = parsed;
   const cmd = positional[0];
+  const render = buildRenderOptions(flags, inheritedRender);
 
   if (!cmd || cmd === "-h" || cmd === "--help" || cmd === "help") {
+    return "help: run `skillx getsrc help`";
+  }
+
+  if (cmd === "list") {
+    const { index, sources } = await context.readUnifiedSources();
+    const rows = sources
+      .map((source) => buildSourceRow(source, render))
+      .sort((a, b) => String(a.name).localeCompare(String(b.name)));
+
+    const title = render.noMeta ? undefined : `sources (updatedAt=${index.updatedAt ?? "-"})`;
+    return formatRows(rows, ["id", "type", "label", "path"], render, {
+      title,
+      total: rows.length,
+    });
+  }
+
+  if (cmd === "has") {
+    const token = positional[1];
+    if (!token) throw new Error("Usage: has <name|id> [--version <version>]");
+
+    const { sources } = await context.readUnifiedSources();
+    const version = typeof flags.version === "string" ? flags.version : undefined;
+    const byId = sources.find((s) => s.id === token);
+    const match = byId
+      ? (!version || byId.version === version || byId.ref === version ? byId : undefined)
+      : sources.find((s) => s.name === token && (!version || s.version === version || s.ref === version));
+
+    if (render.noMeta) {
+      return match ? "true" : "false";
+    }
+
+    const row = {
+      has: Boolean(match),
+      query: token,
+      version: version ?? null,
+      sourceId: match?.id ?? null,
+      label: match?.label ?? null,
+    };
+
+    return formatRows([row], ["has", "query", "version", "sourceId", "label"], render, {
+      title: "has",
+      total: 1,
+    });
+  }
+
+  if (cmd === "get") {
+    const token = positional[1];
+    if (!token) throw new Error("Usage: get <source|id>");
+
+    const { sources } = await context.readUnifiedSources();
+    const source = resolveSourceOrThrow(sources, token);
+    return formatRows([buildSourceRow(source, render)], ["id", "type", "label", "path"], render, {
+      title: "source",
+      total: 1,
+    });
+  }
+
+  if (cmd === "resolve") {
+    const spec = positional[1];
+    if (!spec) throw new Error("Usage: resolve <spec>");
+
+    const parsedSpec = parseSpec(spec);
+    const row: Record<string, unknown> = {
+      input: spec,
+      type: parsedSpec.type,
+      name: parsedSpec.name,
+      version: "version" in parsedSpec ? parsedSpec.version ?? null : null,
+      ref: "ref" in parsedSpec ? parsedSpec.ref ?? null : null,
+      repoUrl: "repoUrl" in parsedSpec ? parsedSpec.repoUrl : null,
+    };
+    return formatRows([row], ["input", "type", "name", "version", "ref", "repoUrl"], render, {
+      title: "resolved",
+      total: 1,
+    });
+  }
+
+  if (cmd === "fetch") {
+    const specs = positional.slice(1);
+    if (specs.length === 0) throw new Error("Usage: fetch <spec...> [--modify true|false]");
+
+    const modify = toBool(flags.modify, false);
+    const normalizedSpecs = specs.map(normalizeRepoPrefix);
+    const backendArgs = ["--modify", String(modify), ...normalizedSpecs];
+
+    const { before, after, result } = await withMutationLock(context.getsrcDir, async () => {
+      const beforeLocked = (await context.readUnifiedSources()).sources;
+      const resultLocked = runGetsrcBackend(backendArgs, context.getsrcCwd);
+      const afterLocked = (await context.readUnifiedSources()).sources;
+      return {
+        before: beforeLocked,
+        after: afterLocked,
+        result: resultLocked,
+      };
+    });
+
+    const beforeSet = new Set(before.map((s) => `${s.type}:${s.name}:${s.version ?? s.ref ?? ""}`));
+    const added = after.filter((s) => !beforeSet.has(`${s.type}:${s.name}:${s.version ?? s.ref ?? ""}`));
+
+    const rows = added.map((source) => buildSourceRow(source, render));
+    const base = formatRows(rows, ["id", "type", "label", "path"], render, {
+      title: `fetch (modify=${modify})`,
+      total: rows.length,
+    });
+
+    if (!render.logs) return base;
+
+    const logLines = [
+      base,
+      result.stdout.trim() ? `stdout:\n${result.stdout.trim()}` : "stdout: -",
+      result.stderr.trim() ? `stderr:\n${result.stderr.trim()}` : "stderr: -",
+    ];
+    return logLines.join("\n");
+  }
+
+  if (cmd === "remove") {
+    const tokens = positional.slice(1);
+    if (tokens.length === 0) throw new Error("Usage: remove <source|id...>");
+
+    const { sources } = await context.readUnifiedSources();
+    const names = tokens.map((token) => resolveSourceOrThrow(sources, token).name);
+
+    const { before, after, result } = await withMutationLock(context.getsrcDir, async () => {
+      const beforeLocked = (await context.readUnifiedSources()).sources;
+      const resultLocked = runGetsrcBackend(["remove", ...names], context.getsrcCwd);
+      const afterLocked = (await context.readUnifiedSources()).sources;
+      return {
+        before: beforeLocked,
+        after: afterLocked,
+        result: resultLocked,
+      };
+    });
+
+    const afterKeys = new Set(after.map(sourceKey));
+    const removed = before.filter((source) => !afterKeys.has(sourceKey(source)));
+
+    const rows = removed.map((source) => ({ id: source.id, type: source.type, label: source.label }));
+    const base = formatRows(rows, ["id", "type", "label"], render, {
+      title: "removed",
+      total: rows.length,
+    });
+
+    if (!render.logs) return base;
+
+    return [
+      base,
+      result.stdout.trim() ? `stdout:\n${result.stdout.trim()}` : "stdout: -",
+      result.stderr.trim() ? `stderr:\n${result.stderr.trim()}` : "stderr: -",
+    ].join("\n");
+  }
+
+  if (cmd === "clean") {
+    const cleanArgs = ["clean"];
+    const selectorKeys = ["packages", "repos", "npm", "pypi", "crates"] as const;
+    let hasSelectorFlag = false;
+    let hasEnabledSelector = false;
+
+    for (const key of selectorKeys) {
+      if (flags[key] === undefined) continue;
+      hasSelectorFlag = true;
+      const enabled = toBool(flags[key], false);
+      if (enabled) {
+        hasEnabledSelector = true;
+        cleanArgs.push(`--${key}`);
+      }
+    }
+
+    if (hasSelectorFlag && !hasEnabledSelector) {
+      return render.noMeta ? "clean: no-op" : "cleaned: 0/0 (all selectors false)";
+    }
+
+    const { before, after, result } = await withMutationLock(context.getsrcDir, async () => {
+      const beforeLocked = (await context.readUnifiedSources()).sources;
+      const resultLocked = runGetsrcBackend(cleanArgs, context.getsrcCwd);
+      const afterLocked = (await context.readUnifiedSources()).sources;
+      return {
+        before: beforeLocked,
+        after: afterLocked,
+        result: resultLocked,
+      };
+    });
+    const afterSet = new Set(after.map(sourceKey));
+    const removed = before.filter((s) => !afterSet.has(sourceKey(s)));
+
+    const rows = removed.map((source) => ({ id: source.id, type: source.type, label: source.label }));
+    const base = formatRows(rows, ["id", "type", "label"], render, {
+      title: "cleaned",
+      total: rows.length,
+    });
+
+    if (!render.logs) return base;
+
+    return [
+      base,
+      result.stdout.trim() ? `stdout:\n${result.stdout.trim()}` : "stdout: -",
+      result.stderr.trim() ? `stderr:\n${result.stderr.trim()}` : "stderr: -",
+    ].join("\n");
+  }
+
+  if (cmd === "files") {
+    const token = positional[1];
+    if (!token) throw new Error("Usage: files <source|id> [--glob <pattern>]");
+
+    const glob = String(flags.glob ?? "**/*");
+    const typeFilter = String(flags.type ?? "file").toLowerCase();
+    if (!["file", "dir", "all"].includes(typeFilter)) {
+      throw new Error("Usage: files <source|id> [--glob <pattern>] [--type file|dir|all]");
+    }
+    const matcher = globToRegex(glob);
+    const { sources } = await context.readUnifiedSources();
+    const source = resolveSourceOrThrow(sources, token);
+    const sourceRoot = resolveInRoot(context.getsrcDir, source.path);
+
+    const entries: Array<Record<string, unknown>> = [];
+    await walkAllEntries(sourceRoot, async ({ relPath, entry, st }) => {
+      if (glob === "**/*" || matcher.test(relPath) || (entry.isDirectory() && matcher.test(`${relPath}/`))) {
+        const kind = entry.isDirectory() ? "dir" : "file";
+        if (typeFilter !== "all" && kind !== typeFilter) return;
+        entries.push({
+          sourceId: source.id,
+          fileId: fileIdFor(source.id, relPath),
+          path: relPath,
+          kind,
+          size: kind === "dir" ? 0 : st.size,
+        });
+      }
+    });
+
+    entries.sort((a, b) => String(a.path).localeCompare(String(b.path)));
+
+    return formatRows(entries, ["fileId", "path", "kind", "size"], render, {
+      title: `files(${source.id}) glob=${glob}`,
+      total: entries.length,
+    });
+  }
+
+  if (cmd === "tree") {
+    const token = positional[1];
+    if (!token) throw new Error("Usage: tree <source|id> [--depth <n>] [--pattern <glob>]");
+
+    const depth = Math.max(1, toInt(flags.depth, 3));
+    const pattern = typeof flags.pattern === "string" ? flags.pattern : null;
+
+    const { sources } = await context.readUnifiedSources();
+    const source = resolveSourceOrThrow(sources, token);
+    const sourceRoot = resolveInRoot(context.getsrcDir, source.path);
+
+    const tree = await buildTree(sourceRoot, source.label, depth, pattern);
+    if (!tree) return render.noMeta ? "" : `tree: 0`;
+
+    const lines = renderTreeLines(tree);
+    const lineCap = Math.max(1, render.maxItems ?? DEFAULT_TREE_LINES);
+    const shown = lines.slice(0, lineCap);
+
+    if (render.noMeta) {
+      const out = [...shown];
+      if (lines.length > shown.length) {
+        out.push(`... +${lines.length - shown.length} more lines`);
+      }
+      return out.join("\n");
+    }
+
+    const out: string[] = [`tree(${source.id}) depth=${depth}${pattern ? ` pattern=${pattern}` : ""}`];
+    out.push(...shown);
+    if (lines.length > shown.length) {
+      out.push(`... +${lines.length - shown.length} more lines`);
+    }
+    return out.join("\n");
+  }
+
+  if (cmd === "read") {
+    const token = positional[1];
+    const filePath = positional[2];
+    if (!token || !filePath) throw new Error("Usage: read <source|id> <path>");
+
+    const { sources } = await context.readUnifiedSources();
+    const source = resolveSourceOrThrow(sources, token);
+    const sourceRoot = resolveInRoot(context.getsrcDir, source.path);
+    const absFile = resolveInRoot(sourceRoot, filePath);
+    const content = await readFile(absFile, "utf8");
+
+    const slice = computeReadSlice(content, flags);
+    return renderReadSlice(filePath, slice, render, toBool(flags.raw, false));
+  }
+
+  if (cmd === "read-many") {
+    const token = positional[1];
+    const requested = positional.slice(2);
+    if (!token || requested.length === 0) {
+      throw new Error("Usage: read-many <source|id> <path...>");
+    }
+
+    const { sources } = await context.readUnifiedSources();
+    const source = resolveSourceOrThrow(sources, token);
+    const sourceRoot = resolveInRoot(context.getsrcDir, source.path);
+
+    const expanded: string[] = [];
+
+    for (const requestedPath of requested) {
+      if (!hasGlobChars(requestedPath)) {
+        expanded.push(requestedPath);
+        continue;
+      }
+
+      const rg = runCmd(
+        "rg",
+        ["--files", "--glob", requestedPath, "--glob", "!**/node_modules/**", "--glob", "!**/.git/**"],
+        sourceRoot
+      );
+
+      if (rg.status === 0) {
+        for (const line of rg.stdout.split("\n")) {
+          const trimmed = line.trim();
+          if (trimmed) expanded.push(trimmed);
+        }
+      }
+    }
+
+    const unique = [...new Set(expanded)].sort((a, b) => a.localeCompare(b));
+    const maxFiles = render.maxItems ?? unique.length;
+    const selected = unique.slice(0, Math.max(0, maxFiles));
+    const raw = toBool(flags.raw, false);
+
+    const blocks: string[] = [];
+
+    if (!render.noMeta) {
+      blocks.push(`read-many(${source.id}): ${selected.length}/${unique.length} file(s)`);
+    }
+
+    for (const relPath of selected) {
+      try {
+        const absPath = resolveInRoot(sourceRoot, relPath);
+        const content = await readFile(absPath, "utf8");
+        const slice = computeReadSlice(content, flags);
+        const block = renderReadSlice(relPath, slice, render, raw);
+        blocks.push(block);
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
+        blocks.push(`path: ${relPath}\nerror: ${msg}`);
+      }
+    }
+
+    if (unique.length > selected.length) {
+      blocks.push(`... +${unique.length - selected.length} more file(s)`);
+    }
+
+    return blocks.join("\n\n");
+  }
+
+  if (cmd === "grep") {
+    const pattern = positional[1];
+    if (!pattern) {
+      throw new Error("Usage: grep <pattern> [--sources <a,b>] [--include <glob>] [--max-results <n>] [--ignore-case true|false]");
+    }
+
+    const include = String(flags.include ?? "**/*");
+    const maxResults = Math.max(1, toInt(flags["max-results"], DEFAULT_MAX_RESULTS));
+    const ignoreCase = toBool(flags["ignore-case"], false);
+
+    const { sources } = await context.readUnifiedSources();
+    const sourceFilterTokens = parseCsv(flags.sources);
+    const selected = sourceFilterTokens
+      ? sourceFilterTokens.map((token) => resolveSourceOrThrow(sources, token).id)
+      : null;
+    const selectedSet = selected ? new Set(selected) : null;
+
+    const filteredSources = selectedSet ? sources.filter((s) => selectedSet.has(s.id)) : sources;
+
+    const matches: Array<Record<string, unknown>> = [];
+
+    for (const source of filteredSources) {
+      if (matches.length >= maxResults) break;
+
+      const sourceRoot = resolveInRoot(context.getsrcDir, source.path);
+      const rgArgs = [
+        "--json",
+        "--line-number",
+        "--glob",
+        include,
+        "--glob",
+        "!**/node_modules/**",
+        "--glob",
+        "!**/.git/**",
+        pattern,
+        ".",
+      ];
+      if (ignoreCase) {
+        rgArgs.splice(2, 0, "--ignore-case");
+      }
+      const rg = runCmd(
+        "rg",
+        rgArgs,
+        sourceRoot
+      );
+
+      if (rg.status !== 0 && rg.status !== 1) {
+        throw new Error(rg.stderr || rg.stdout || `rg failed for ${source.id}`);
+      }
+
+      for (const line of rg.stdout.split("\n")) {
+        if (!line.trim()) continue;
+
+        let parsed: any;
+        try {
+          parsed = JSON.parse(line);
+        } catch {
+          continue;
+        }
+
+        if (parsed.type !== "match") continue;
+        const data = parsed.data;
+        const relFile = String(data.path.text).replace(/^\.\//, "");
+        const content = oneLine(String(data.lines.text ?? ""));
+        const snippetMax = render.maxCharsProvided ? render.maxChars : DEFAULT_MATCH_SNIPPET_CHARS;
+
+        matches.push({
+          sourceId: source.id,
+          fileId: fileIdFor(source.id, relFile),
+          file: relFile,
+          line: data.line_number,
+          content: clipText(content, snippetMax).text,
+        });
+
+        if (matches.length >= maxResults) break;
+      }
+    }
+
+    return formatRows(matches, ["sourceId", "file", "line", "content"], render, {
+      title: `grep pattern=${pattern}`,
+      total: matches.length,
+    });
+  }
+
+  if (cmd === "ast-grep") {
+    const token = positional[1];
+    const pattern = positional[2];
+    if (!token || !pattern) {
+      throw new Error("Usage: ast-grep <source|id> <pattern> [--glob <glob>] [--lang <lang|a,b>] [--limit <n>]");
+    }
+
+    const glob = String(flags.glob ?? "**/*");
+    const limit = Math.max(1, toInt(flags.limit, DEFAULT_AST_LIMIT));
+    const langFlag = parseCsv(flags.lang)?.map((l) => l.toLowerCase()) ?? null;
+
+    const { sources } = await context.readUnifiedSources();
+    const source = resolveSourceOrThrow(sources, token);
+    const sourceRoot = resolveInRoot(context.getsrcDir, source.path);
+
+    const matches = await runAstGrepSearch({
+      sourceRoot,
+      pattern,
+      glob,
+      limit,
+      lang: langFlag,
+    });
+
+    const rows = matches.map((match) => {
+      const snippetLimit = render.maxCharsProvided ? render.maxChars : DEFAULT_MATCH_SNIPPET_CHARS;
+      const base: Record<string, unknown> = {
+        sourceId: source.id,
+        fileId: fileIdFor(source.id, match.file),
+        file: match.file,
+        line: match.line,
+        column: match.column,
+        text: clipText(oneLine(match.text), snippetLimit).text,
+      };
+
+      if (render.long) {
+        base.endLine = match.endLine;
+        base.endColumn = match.endColumn;
+      }
+
+      if (render.long && Object.keys(match.metavars).length > 0) {
+        base.metavars = Object.entries(match.metavars)
+          .map(([k, v]) => `${k}=${oneLine(v)}`)
+          .join(", ");
+      }
+
+      return base;
+    });
+
+    return formatRows(rows, ["sourceId", "file", "line", "column", "text", "metavars"], render, {
+      title: `ast-grep(${source.id})`,
+      total: rows.length,
+    });
+  }
+
+  if (cmd === "batch") {
+    const ops = positional.slice(1).filter(Boolean);
+    const piped = (await readPipedStdin()).trim();
+    if (ops.length === 0 && !piped) {
+      throw new Error("Usage: batch \"<cmd...>\" \"<cmd...>\" [...]  (or pipe lines to stdin)");
+    }
+
+    const pipedOps = piped
+      ? piped
+          .split("\n")
+          .map((line) => line.trim())
+          .filter(Boolean)
+      : [];
+
+    const allOps = [...ops, ...pipedOps];
+    const blocks: string[] = [];
+
+    if (!render.noMeta) {
+      blocks.push(`batch: ${allOps.length} op(s)`);
+    }
+
+    for (let i = 0; i < allOps.length; i += 1) {
+      const op = allOps[i];
+      const tokens = splitCommandLine(op);
+      if (tokens.length === 0) continue;
+
+      const childParsed = parseArgv(tokens);
+      const childCmd = childParsed.positional[0];
+      if (childCmd === "batch" || childCmd === "serve") {
+        throw new Error(`batch does not allow nested ${childCmd}`);
+      }
+
+      try {
+        const result = await runCommand(childParsed, context, render);
+        if (render.noMeta) {
+          blocks.push(result);
+        } else {
+          blocks.push(`[${i + 1}] ${op}`);
+          blocks.push(result);
+        }
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
+        if (render.noMeta) {
+          blocks.push(`error: ${msg}`);
+        } else {
+          blocks.push(`[${i + 1}] ${op}`);
+          blocks.push(`error: ${msg}`);
+        }
+      }
+    }
+
+    return blocks.join("\n\n");
+  }
+
+  if (cmd === "serve") {
+    const rl = createInterface({
+      input: process.stdin,
+      output: process.stdout,
+      terminal: process.stdin.isTTY,
+    });
+
+    const out: string[] = [];
+    if (!render.noMeta) {
+      out.push("serve: ready (type commands without 'getsrc'; type 'exit' to quit)");
+    }
+
+    const processLine = async (line: string): Promise<string> => {
+      const trimmed = line.trim();
+      if (!trimmed) return "";
+      if (trimmed === "exit" || trimmed === "quit") return "__EXIT__";
+
+      const tokens = splitCommandLine(trimmed);
+      if (tokens.length === 0) return "";
+
+      const child = parseArgv(tokens);
+      const childCmd = child.positional[0];
+      if (childCmd === "serve") {
+        return "error: nested serve is not allowed";
+      }
+
+      try {
+        const result = await runCommand(child, context, render);
+        return result;
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
+        return `error: ${msg}`;
+      }
+    };
+
+    if (!process.stdin.isTTY) {
+      for await (const line of rl) {
+        const result = await processLine(line);
+        if (!result) continue;
+        if (result === "__EXIT__") break;
+        out.push(result);
+      }
+      rl.close();
+      return out.join("\n\n");
+    }
+
+    process.stdout.write(`${out.join("\n")}\n`);
+    for await (const line of rl) {
+      const result = await processLine(line);
+      if (!result) continue;
+      if (result === "__EXIT__") break;
+      process.stdout.write(`${result}\n\n`);
+    }
+
+    rl.close();
+    return "";
+  }
+
+  throw new Error(`Unknown command: ${cmd}`);
+}
+
+async function main(): Promise<void> {
+  const parsed = parseArgv(process.argv.slice(2));
+
+  if (parsed.positional.length === 0 || ["-h", "--help", "help"].includes(parsed.positional[0])) {
     usage();
-    process.exit(1);
+    process.exit(parsed.positional.length === 0 ? 1 : 0);
   }
 
   const { getsrcDir, getsrcCwd } = getPaths();
   process.env[LEGACY_DIR_ENV] = getsrcDir;
   await mkdir(getsrcCwd, { recursive: true });
 
-  const readUnifiedSources = async (): Promise<{ index: SourcesIndex; sources: Source[] }> => {
-    const index = await readSourcesIndex(getsrcDir);
-    return {
-      index,
-      sources: toUnifiedSources(index),
-    };
+  const context: CommandContext = {
+    getsrcDir,
+    getsrcCwd,
+    readUnifiedSources: async (): Promise<{ index: SourcesIndex; sources: SourceView[] }> => {
+      const index = await readSourcesIndex(getsrcDir);
+      return {
+        index,
+        sources: toUnifiedSources(index),
+      };
+    },
   };
 
   try {
-    if (cmd === "list") {
-      const { index, sources } = await readUnifiedSources();
-      console.log(JSON.stringify({ getsrcDir, updatedAt: index.updatedAt, count: sources.length, sources }, null, 2));
-      return;
+    const output = await runCommand(parsed, context);
+    if (output) {
+      process.stdout.write(`${output}\n`);
     }
-
-    if (cmd === "has") {
-      const name = positional[1];
-      if (!name) throw new Error("Usage: has <name> [--version <version>]");
-
-      const { sources } = await readUnifiedSources();
-      const version = typeof flags.version === "string" ? flags.version : undefined;
-      const has = sources.some((s) => s.name === name && (!version || s.version === version || s.ref === version));
-
-      console.log(JSON.stringify({ name, version: version ?? null, has }, null, 2));
-      return;
-    }
-
-    if (cmd === "get") {
-      const name = positional[1];
-      if (!name) throw new Error("Usage: get <name>");
-
-      const { sources } = await readUnifiedSources();
-      const source = sources.find((s) => s.name === name) ?? null;
-      console.log(JSON.stringify({ source }, null, 2));
-      return;
-    }
-
-    if (cmd === "resolve") {
-      const spec = positional[1];
-      if (!spec) throw new Error("Usage: resolve <spec>");
-      console.log(JSON.stringify(parseSpec(spec), null, 2));
-      return;
-    }
-
-    if (cmd === "fetch") {
-      const specs = positional.slice(1);
-      if (specs.length === 0) throw new Error("Usage: fetch <spec...> [--modify true|false]");
-
-      const modify = toBool(flags.modify, false);
-      const normalizedSpecs = specs.map(normalizeRepoPrefix);
-      const args = ["--modify", String(modify), ...normalizedSpecs];
-
-      const before = (await readUnifiedSources()).sources;
-      const result = runGetsrcBackend(args, getsrcCwd);
-      const after = (await readUnifiedSources()).sources;
-
-      const beforeSet = new Set(before.map((s) => `${s.type}:${s.name}:${s.version ?? s.ref ?? ""}`));
-      const added = after.filter((s) => !beforeSet.has(`${s.type}:${s.name}:${s.version ?? s.ref ?? ""}`));
-
-      console.log(JSON.stringify({
-        ok: true,
-        specs,
-        normalizedSpecs,
-        modify,
-        added,
-        stdout: result.stdout.trim(),
-        stderr: result.stderr.trim(),
-      }, null, 2));
-      return;
-    }
-
-    if (cmd === "remove") {
-      const names = positional.slice(1);
-      if (names.length === 0) throw new Error("Usage: remove <name...>");
-
-      const before = (await readUnifiedSources()).sources;
-      const result = runGetsrcBackend(["remove", ...names], getsrcCwd);
-      const after = (await readUnifiedSources()).sources;
-
-      const afterNames = new Set(after.map((s) => s.name));
-      const removed = before.map((s) => s.name).filter((name) => !afterNames.has(name));
-
-      console.log(JSON.stringify({
-        ok: true,
-        requested: names,
-        removed,
-        stdout: result.stdout.trim(),
-        stderr: result.stderr.trim(),
-      }, null, 2));
-      return;
-    }
-
-    if (cmd === "clean") {
-      const before = (await readUnifiedSources()).sources;
-      const cleanArgs = ["clean"];
-
-      for (const key of ["packages", "repos", "npm", "pypi", "crates"]) {
-        if (flags[key] === true || String(flags[key]).toLowerCase() === "true") {
-          cleanArgs.push(`--${key}`);
-        }
-      }
-
-      const result = runGetsrcBackend(cleanArgs, getsrcCwd);
-      const after = (await readUnifiedSources()).sources;
-
-      const afterSet = new Set(after.map((s) => `${s.type}:${s.name}`));
-      const removed = before
-        .filter((s) => !afterSet.has(`${s.type}:${s.name}`))
-        .map((s) => s.name);
-
-      console.log(JSON.stringify({
-        ok: true,
-        removed,
-        stdout: result.stdout.trim(),
-        stderr: result.stderr.trim(),
-      }, null, 2));
-      return;
-    }
-
-    if (cmd === "files") {
-      const sourceName = positional[1];
-      if (!sourceName) throw new Error("Usage: files <source> [--glob <pattern>]");
-
-      const glob = String(flags.glob ?? "**/*");
-      const matcher = globToRegex(glob);
-      const { sources } = await readUnifiedSources();
-      const source = getSourceOrThrow(sources, sourceName);
-      const sourceRoot = resolveInRoot(getsrcDir, source.path);
-
-      const entries: Array<{ path: string; size: number; isDirectory: boolean }> = [];
-      await walkAllEntries(sourceRoot, async ({ relPath, entry, st }) => {
-        if (glob === "**/*" || matcher.test(relPath) || (entry.isDirectory() && matcher.test(`${relPath}/`))) {
-          entries.push({
-            path: relPath,
-            size: entry.isDirectory() ? 0 : st.size,
-            isDirectory: entry.isDirectory(),
-          });
-        }
-      });
-
-      entries.sort((a, b) => a.path.localeCompare(b.path));
-      console.log(JSON.stringify({ source: sourceName, glob, count: entries.length, entries }, null, 2));
-      return;
-    }
-
-    if (cmd === "tree") {
-      const sourceName = positional[1];
-      if (!sourceName) throw new Error("Usage: tree <source> [--depth <n>] [--pattern <glob>]");
-
-      const depth = Math.max(1, toInt(flags.depth, 3));
-      const pattern = typeof flags.pattern === "string" ? flags.pattern : null;
-      const matcher = pattern ? globToRegex(pattern) : null;
-
-      const { sources } = await readUnifiedSources();
-      const source = getSourceOrThrow(sources, sourceName);
-      const sourceRoot = resolveInRoot(getsrcDir, source.path);
-
-      async function buildNode(
-        absDir: string,
-        relDir: string,
-        level: number
-      ): Promise<{ name: string; type: "dir"; children: Array<any> } | null> {
-        if (level > depth) return null;
-
-        const children: Array<any> = [];
-        const dirents = await readdir(absDir, { withFileTypes: true });
-
-        for (const dirent of dirents) {
-          if (shouldSkipName(dirent.name)) continue;
-
-          const relPath = relDir ? `${relDir}/${dirent.name}` : dirent.name;
-          const absPath = join(absDir, dirent.name);
-
-          if (dirent.isDirectory()) {
-            const child = await buildNode(absPath, relPath, level + 1);
-            const dirMatches = !matcher || matcher.test(relPath) || matcher.test(`${relPath}/`);
-            if (child && (dirMatches || (child.children && child.children.length > 0))) {
-              children.push(child);
-            }
-            continue;
-          }
-
-          if (!matcher || matcher.test(relPath)) {
-            children.push({ name: dirent.name, type: "file" });
-          }
-        }
-
-        children.sort((a, b) => a.name.localeCompare(b.name));
-        const nodeName = relDir ? relDir.split("/").at(-1) ?? relDir : sourceName;
-        return { name: nodeName, type: "dir", children };
-      }
-
-      const tree = await buildNode(sourceRoot, "", 1);
-      console.log(JSON.stringify({ source: sourceName, depth, pattern, tree }, null, 2));
-      return;
-    }
-
-    if (cmd === "read") {
-      const sourceName = positional[1];
-      const filePath = positional[2];
-      if (!sourceName || !filePath) throw new Error("Usage: read <source> <path>");
-
-      const { sources } = await readUnifiedSources();
-      const source = getSourceOrThrow(sources, sourceName);
-      const sourceRoot = resolveInRoot(getsrcDir, source.path);
-      const absFile = resolveInRoot(sourceRoot, filePath);
-      const content = await readFile(absFile, "utf8");
-
-      console.log(JSON.stringify({ source: sourceName, path: filePath, content }, null, 2));
-      return;
-    }
-
-    if (cmd === "read-many") {
-      const sourceName = positional[1];
-      const requested = positional.slice(2);
-      if (!sourceName || requested.length === 0) {
-        throw new Error("Usage: read-many <source> <path...>");
-      }
-
-      const { sources } = await readUnifiedSources();
-      const source = getSourceOrThrow(sources, sourceName);
-      const sourceRoot = resolveInRoot(getsrcDir, source.path);
-
-      const expanded: string[] = [];
-
-      for (const p of requested) {
-        if (!hasGlobChars(p)) {
-          expanded.push(p);
-          continue;
-        }
-
-        const rg = runCmd(
-          "rg",
-          ["--files", "--glob", p, "--glob", "!**/node_modules/**", "--glob", "!**/.git/**"],
-          sourceRoot
-        );
-
-        if (rg.status === 0) {
-          for (const line of rg.stdout.split("\n")) {
-            const trimmed = line.trim();
-            if (trimmed) expanded.push(trimmed);
-          }
-        }
-      }
-
-      const unique = [...new Set(expanded)];
-      const result: Record<string, string> = {};
-
-      for (const relPath of unique) {
-        try {
-          const absPath = resolveInRoot(sourceRoot, relPath);
-          result[relPath] = await readFile(absPath, "utf8");
-        } catch (err) {
-          const msg = err instanceof Error ? err.message : String(err);
-          result[relPath] = `[Error: ${msg}]`;
-        }
-      }
-
-      console.log(JSON.stringify({ source: sourceName, files: result }, null, 2));
-      return;
-    }
-
-    if (cmd === "grep") {
-      const pattern = positional[1];
-      if (!pattern) {
-        throw new Error("Usage: grep <pattern> [--sources <a,b>] [--include <glob>] [--max-results <n>]");
-      }
-
-      const include = String(flags.include ?? "**/*");
-      const maxResults = Math.max(1, toInt(flags["max-results"], DEFAULT_MAX_RESULTS));
-      const selected = flags.sources
-        ? new Set(String(flags.sources).split(",").map((s) => s.trim()).filter(Boolean))
-        : null;
-
-      const { sources } = await readUnifiedSources();
-      const filteredSources = selected ? sources.filter((s) => selected.has(s.name)) : sources;
-
-      const matches: Array<{ source: string; file: string; line: number; content: string }> = [];
-
-      for (const source of filteredSources) {
-        if (matches.length >= maxResults) break;
-
-        const sourceRoot = resolveInRoot(getsrcDir, source.path);
-        const rg = runCmd(
-          "rg",
-          [
-            "--json",
-            "--line-number",
-            "--ignore-case",
-            "--glob",
-            include,
-            "--glob",
-            "!**/node_modules/**",
-            "--glob",
-            "!**/.git/**",
-            pattern,
-            ".",
-          ],
-          sourceRoot
-        );
-
-        if (rg.status !== 0 && rg.status !== 1) {
-          throw new Error(rg.stderr || rg.stdout || `rg failed for ${source.name}`);
-        }
-
-        for (const line of rg.stdout.split("\n")) {
-          if (!line.trim()) continue;
-
-          let parsed: any;
-          try {
-            parsed = JSON.parse(line);
-          } catch {
-            continue;
-          }
-
-          if (parsed.type !== "match") continue;
-          const data = parsed.data;
-          matches.push({
-            source: source.name,
-            file: data.path.text,
-            line: data.line_number,
-            content: String(data.lines.text ?? "").trim().slice(0, 200),
-          });
-
-          if (matches.length >= maxResults) break;
-        }
-      }
-
-      console.log(JSON.stringify({ pattern, include, count: matches.length, matches }, null, 2));
-      return;
-    }
-
-    if (cmd === "ast-grep") {
-      const sourceName = positional[1];
-      const pattern = positional[2];
-      if (!sourceName || !pattern) {
-        throw new Error("Usage: ast-grep <source> <pattern> [--glob <glob>] [--lang <lang|a,b>] [--limit <n>]");
-      }
-
-      const installedNow = ensureAstGrepDependencyInstalled();
-      if (installedNow) {
-        const rerun = runCmd("bun", [fileURLToPath(import.meta.url), ...process.argv.slice(2)], process.cwd());
-        if (rerun.stdout) process.stdout.write(rerun.stdout);
-        if (rerun.stderr) process.stderr.write(rerun.stderr);
-        if (rerun.status !== 0) {
-          throw new Error(`Failed to restart after ast-grep install (exit ${rerun.status})`);
-        }
-        return;
-      }
-
-      const glob = String(flags.glob ?? "**/*");
-      const limit = Math.max(1, toInt(flags.limit, DEFAULT_AST_LIMIT));
-
-      const langFlag = flags.lang
-        ? String(flags.lang)
-            .split(",")
-            .map((l) => l.trim().toLowerCase())
-            .filter(Boolean)
-        : null;
-
-      const { sources } = await readUnifiedSources();
-      const source = getSourceOrThrow(sources, sourceName);
-      const sourceRoot = resolveInRoot(getsrcDir, source.path);
-
-      const matches = await runAstGrepSearch({
-        sourceRoot,
-        pattern,
-        glob,
-        limit,
-        lang: langFlag,
-      });
-
-      console.log(JSON.stringify({ source: sourceName, pattern, glob, count: matches.length, matches }, null, 2));
-      return;
-    }
-
-    throw new Error(`Unknown command: ${cmd}`);
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
-    console.error(JSON.stringify({ error: message }, null, 2));
+    process.stderr.write(`error: ${message}\n`);
     process.exit(1);
   }
 }
