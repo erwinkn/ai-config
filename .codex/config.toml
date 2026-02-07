@@ -1,18 +1,23 @@
-model = "gpt-5.2-codex"
-model_reasoning_effort = "medium"
+model = "gpt-5.3-codex"
+model_reasoning_effort = "high"
 sandbox_mode = "danger-full-access"
 web_search = "live"
 suppress_unstable_features_warning = false
-collab = true
-# collaboration_modes = true
-model_personality = "pragmatic"
 personality = "pragmatic"
+file_opener="vscode"
+notify = ["python3", "/Users/erwin/.codex/notify_macos.py"]
 
 [features]
 unified_exec = true
 shell_snapshot = true
 steer = true
 personality = true
+collab = true
+collaboration_modes=true
+
+[tui]
+notifications = ["agent-turn-complete", "approval-requested"]
+notification_method = "auto"
 
 [projects."/Users/erwin/Code/pulse-ui"]
 trust_level = "trusted"
@@ -32,7 +37,6 @@ trust_level = "trusted"
 [projects."/Users/erwin/conductor/repo/pulse-ui/montgomery"]
 trust_level="trusted"
 
+[mcp_servers.openaiDeveloperDocs]
+url = "https://developers.openai.com/mcp"
 
-[notice]
-hide_gpt5_1_migration_prompt = true
-"hide_gpt-5.1-codex-max_migration_prompt" = true
