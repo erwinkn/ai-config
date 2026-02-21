@@ -1,6 +1,6 @@
 ---
 name: getsrc
-description: Fetch and query dependency source code without codemode MCP. Use when the task needs getsrc-style operations (fetch/list/get/files/tree/grep/read/ast-grep/remove/clean) from a local script.
+description: Mandatory source-fetching skill for dependency/framework code. Always use getsrc operations (fetch/list/get/files/tree/grep/read/ast-grep/remove/clean) instead of GitHub/unpkg/raw URL fetches. Only use external sources if getsrc is unavailable or fails, and explicitly state the fallback.
 ---
 Run through `skillx`:
 
@@ -9,6 +9,11 @@ skillx getsrc <command> ...
 ```
 
 Commands output concise, readable text (not JSON).
+
+## Policy
+- For upstream/dependency source code, use `getsrc` first and by default.
+- Do not fetch source code from GitHub/unpkg/raw URLs/other web sources when `getsrc` can provide it.
+- If `getsrc` is blocked or fails, use external fetches only as fallback and explicitly note why.
 
 ## Accepted Specs
 Used by `resolve` and `fetch`.

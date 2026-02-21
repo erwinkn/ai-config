@@ -4,5 +4,6 @@
   },
   "enabledPlugins": {
     "canvas@claude-canvas": true
-  }
+  },
+  "skipDangerousModePermissionPrompt": true
 }
