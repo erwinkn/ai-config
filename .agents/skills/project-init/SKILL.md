@@ -27,6 +27,12 @@ When creating new projects, **always prefer official CLI tools and scaffolding c
 | Electron | `npm init electron-app@latest` |
 | Tauri | `bun create tauri-app` or `npm create tauri-app@latest` |
 
+### TypeScript Package Preference
+
+- Prefer `pnpm` as the package manager for TypeScript packages/libraries.
+- Prefer `tsdown` as the default bundler for TypeScript library packages.
+- If scaffolding with npm/bun CLIs, switch the generated package to `pnpm` + `tsdown` during setup.
+
 ## Python
 
 | Tool | Command |
@@ -63,7 +69,7 @@ When creating new projects, **always prefer official CLI tools and scaffolding c
 1. **Don't manually create config files** - Let the CLI generate them
 2. **Use interactive prompts** - Most CLIs ask about TypeScript, linting, testing
 3. **Check framework docs** - Commands change; verify current syntax
-4. **Prefer bun/bunx** when available - Faster than npm/npx
+4. **Prefer package-manager conventions** - use `pnpm` for TypeScript packages unless project constraints require otherwise
 5. **Use templates** - Many CLIs offer starter templates (e.g., `--template react-ts`)
 
 ## When Manual Setup is OK
