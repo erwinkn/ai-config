@@ -1,5 +1,5 @@
 model = "gpt-5.3-codex"
-model_reasoning_effort = "high"
+model_reasoning_effort = "xhigh"
 sandbox_mode = "danger-full-access"
 web_search = "live"
 suppress_unstable_features_warning = false
@@ -37,6 +37,6 @@ trust_level = "trusted"
 [projects."/Users/erwin/conductor/repo/pulse-ui/montgomery"]
 trust_level="trusted"
 
-[mcp_servers.openaiDeveloperDocs]
-url = "https://developers.openai.com/mcp"
+[mcp_servers.exa]
+url = "https://mcp.exa.ai/mcp"
 
