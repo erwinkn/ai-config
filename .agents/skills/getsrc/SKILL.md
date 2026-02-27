@@ -75,8 +75,7 @@ Use these on most commands to reduce tokens:
 Downloaded artifacts are stored in:
 - `GETSRC_DIR` if set
 - else existing `$XDG_DATA_HOME/getsrc` when it already has `sources.json`
-- else `$XDG_DATA_HOME/opensrc` (legacy backend default)
-- else `~/.local/share/opensrc`
+- else `~/.local/share/getsrc`
 
 For isolated runs, set a temporary `GETSRC_DIR` before calling the script.
 
@@ -85,6 +84,5 @@ For isolated runs, set a temporary `GETSRC_DIR` before calling the script.
 - `fetch/remove/clean` shell out to the backend CLI in the getsrc parent directory.
 - `fetch/remove/clean` are lock-serialized to avoid concurrent mutation races in shared storage.
 - `clean` with selector flags explicitly set to false is treated as a no-op for safety.
-- Path auto-selection follows backend behavior: legacy `opensrc` is used unless a real `getsrc` index exists (or `GETSRC_DIR` is set).
 - `grep` uses `rg` and excludes `.git` and `node_modules`.
 - `ast-grep` relies on Bun auto-install (or preinstalled `@ast-grep/napi`) when first used.

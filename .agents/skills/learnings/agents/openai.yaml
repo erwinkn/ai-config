@@ -1,0 +1,4 @@
+interface:
+  display_name: "Learnings"
+  short_description: "Capture reusable session learnings in-project"
+  default_prompt: "Use $learnings to write concise end-of-session notes into .agents/learnings, creating the directory when missing."

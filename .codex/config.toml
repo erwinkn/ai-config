@@ -19,10 +19,10 @@ collaboration_modes=true
 notifications = ["agent-turn-complete", "approval-requested"]
 notification_method = "auto"
 
-[projects."/Users/erwin/Code/pulse-ui"]
+[projects."/Users/erwin/Code/ai-config"]
 trust_level = "trusted"
 
-[projects."/Users/erwin/Code/brimstone/monolith-stoneware-v3"]
+[projects."/Users/erwin/Code/pulse-ui"]
 trust_level = "trusted"
 
 [projects."/Users/erwin/Code/brimstone/monolith-stoneware-v4"]
