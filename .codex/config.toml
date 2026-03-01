@@ -13,7 +13,9 @@ shell_snapshot = true
 steer = true
 personality = true
 multi_agent = true
-collaboration_modes=true
+collaboration_modes = true
+voice_transcription = true
+realtime_conversation = true
 
 [tui]
 notifications = ["agent-turn-complete", "approval-requested"]
