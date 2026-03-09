@@ -1,0 +1,4 @@
+interface:
+  display_name: "Batch"
+  short_description: "Plan and execute parallel worktree changes"
+  default_prompt: "Use $batch for large, parallelizable codebase changes. Enter plan mode to research scope and decompose 5-30 independent units, define e2e validation, spawn background worktree agents, require simplify/tests/e2e/PR reporting per unit, and track completion statuses."
