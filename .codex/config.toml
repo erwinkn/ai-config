@@ -1,11 +1,12 @@
-model = "gpt-5.3-codex"
-model_reasoning_effort = "xhigh"
+model = "gpt-5.4"
+model_reasoning_effort = "high"
 sandbox_mode = "danger-full-access"
 web_search = "live"
-suppress_unstable_features_warning = false
+suppress_unstable_features_warning = true
 personality = "pragmatic"
 file_opener="vscode"
 notify = ["python3", "/Users/erwin/.codex/notify_macos.py"]
+service_tier = "fast"
 
 [features]
 unified_exec = true
@@ -41,4 +42,7 @@ trust_level="trusted"
 
 [mcp_servers.exa]
 url = "https://mcp.exa.ai/mcp"
+
+[notice.model_migrations]
+"gpt-5.3-codex" = "gpt-5.4"
 
