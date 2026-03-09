@@ -1,0 +1,4 @@
+interface:
+  display_name: "AI Agents"
+  short_description: "Quick ref for AI CLIs"
+  default_prompt: "Use $ai-agents to delegate through the specific CLI I name and show the exact command."
