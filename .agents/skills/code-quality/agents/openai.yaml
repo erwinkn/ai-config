@@ -1,0 +1,4 @@
+interface:
+  display_name: "Code Quality Ultimate"
+  short_description: "Cleanup and design-hardening pass"
+  default_prompt: "Review this diff for cleanup and design hardening in review-only mode."
