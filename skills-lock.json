@@ -1,6 +1,11 @@
 {
   "version": 1,
   "skills": {
+    "uncodexify": {
+      "source": "cyxzdev/Uncodixfy",
+      "sourceType": "github",
+      "computedHash": "061e759ca9abf9c596bedeb30a6593298fb293d096afe604a7b02308283f79f4"
+    },
     "vercel-composition-patterns": {
       "source": "vercel-labs/agent-skills",
       "sourceType": "github",
