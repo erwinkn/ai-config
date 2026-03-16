@@ -40,3 +40,6 @@ url = "https://mcp.exa.ai/mcp"
 
 [notice.model_migrations]
 "gpt-5.3-codex" = "gpt-5.4"
+
+[windows]
+sandbox = "unelevated"
