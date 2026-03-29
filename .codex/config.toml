@@ -6,6 +6,7 @@ suppress_unstable_features_warning = true
 personality = "pragmatic"
 file_opener="vscode"
 service_tier = "fast"
+plan_mode_reasoning_effort = "xhigh"
 
 [features]
 unified_exec = true
@@ -35,6 +36,18 @@ trust_level = "trusted"
 [projects."/Users/erwin/conductor/repo/pulse-ui/montgomery"]
 trust_level="trusted"
 
+[projects."/Users/erwin/Code/fort-bridge"]
+trust_level = "trusted"
+
+[projects."/Users/erwin/Code/griffe"]
+trust_level = "trusted"
+
+[projects."/Users/erwin/Code/brimstone/monolith"]
+trust_level = "trusted"
+
+[projects."/Users/erwin/Code/ext/litter"]
+trust_level = "trusted"
+
 [mcp_servers.exa]
 url = "https://mcp.exa.ai/mcp"
 
@@ -43,3 +56,6 @@ url = "https://mcp.exa.ai/mcp"
 
 [windows]
 sandbox = "unelevated"
+
+[plugins."github@openai-curated"]
+enabled = true

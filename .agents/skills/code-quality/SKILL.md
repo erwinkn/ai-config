@@ -47,6 +47,8 @@ Obtain the full diff from step 1. Use the `ai-agents` skill to delegate five rev
 
 Each agent runs in read-only / plan mode and returns structured findings only — no edits.
 
+When the alternate backend is Claude, invoke it with tools disabled and require a single final text response. Recommended pattern: `claude -p --permission-mode plan --tools "" '<prompt>'` and include `Respond with a single final text message only. Do not call tools.` in the prompt. This avoids plan-mode tool churn such as `ToolSearch` / `ExitPlanMode` interrupting or obscuring the actual review output.
+
 #### Agent 1: Reuse Review
 
 Prompt the agent to review the diff for reuse opportunities:
