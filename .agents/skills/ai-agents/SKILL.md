@@ -1,6 +1,6 @@
 ---
 name: ai-agents
-description: Use when the user explicitly asks to delegate a task through a specific installed AI CLI such as `claude`, `agent`, `opencode`, or `gemini`. Provides a short command reference for running that harness headlessly, in read-only mode, or in an isolated worktree.
+description: Use when the user explicitly asks to delegate a task through a specific installed AI CLI such as `codex`, `claude`, `agent`, `opencode`, or `gemini`. Provides a short command reference for running that harness headlessly, in read-only mode, or in an isolated worktree.
 metadata:
   argument-hint: <cli-and-task>
 ---
@@ -12,7 +12,11 @@ Use this skill only when the user names the CLI they want.
 - Keep delegated tasks bounded.
 - Run from the correct repository or working directory.
 - Prefer headless commands that print and exit.
+- If the user asks for Codex subagents, use Codex.
+- If you are launching a subagent inside the same harness you are already using, use that harness's native subagent feature instead of shelling out to its CLI.
 - Review delegated output yourself before trusting it.
+
+Example: if you are already operating inside a harness and need a subagent of that same harness, use the native subagent feature instead of launching the CLI recursively from the shell.
 
 ## Scope The Request
 
@@ -30,6 +34,24 @@ Good default:
 ```
 
 ## Quick Reference
+
+### Codex
+
+Use Codex when the user asks for Codex specifically.
+
+```bash
+codex exec '<task>'
+codex exec --sandbox read-only '<task>'
+codex exec --json '<task>'
+codex exec -C /path/to/repo '<task>'
+codex exec --output-schema schema.json '<task>'
+```
+
+- `exec`: headless execution
+- `--sandbox read-only`: planning or read-only runs
+- `--json`: stream structured events
+- `-C`: run against a specific directory
+- `--output-schema`: constrain the final response shape
 
 ### Claude
 
