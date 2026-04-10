@@ -48,6 +48,9 @@ trust_level = "trusted"
 [projects."/Users/erwin/Code/ext/litter"]
 trust_level = "trusted"
 
+[projects."/Users/erwin/Code/red-metal"]
+trust_level = "trusted"
+
 [mcp_servers.exa]
 url = "https://mcp.exa.ai/mcp"
 
