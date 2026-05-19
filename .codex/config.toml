@@ -1,4 +1,4 @@
-model = "gpt-5.4"
+model = "gpt-5.5"
 model_reasoning_effort = "high"
 sandbox_mode = "danger-full-access"
 web_search = "live"
@@ -51,8 +51,31 @@ trust_level = "trusted"
 [projects."/Users/erwin/Code/red-metal"]
 trust_level = "trusted"
 
+[projects."/Users/erwin/Code/equisafe"]
+trust_level = "trusted"
+
+[projects."/Users/erwin/Code/theseus"]
+trust_level = "trusted"
+
 [mcp_servers.exa]
 url = "https://mcp.exa.ai/mcp"
+
+[mcp_servers.mobbin]
+url = "https://api.mobbin.com/mcp"
+
+[mcp_servers.scientific_papers]
+command = "/Users/erwin/.cargo/bin/uv"
+args = ["run", "sci-copilot", "serve-mcp-stdio"]
+cwd = "/Users/erwin/Code/red-metal"
+startup_timeout_sec = 20.0
+tool_timeout_sec = 120.0
+
+[mcp_servers.reducto]
+command = "uvx"
+args = ["mcp-server-reducto"]
+
+[mcp_servers.red-metal-librarian]
+url = "https://librarian-production-101c.up.railway.app/mcp?secret=c045da26b6018c4bb2ebcc0b4de297be087a0348cbfd06c505c97a38394cce33"
 
 [notice.model_migrations]
 "gpt-5.3-codex" = "gpt-5.4"
@@ -62,3 +85,37 @@ sandbox = "unelevated"
 
 [plugins."github@openai-curated"]
 enabled = true
+
+[plugins."vercel@openai-curated"]
+enabled = true
+
+[plugins."documents@openai-primary-runtime"]
+enabled = true
+
+[plugins."spreadsheets@openai-primary-runtime"]
+enabled = true
+
+[plugins."presentations@openai-primary-runtime"]
+enabled = true
+
+[plugins."notion@openai-curated"]
+enabled = true
+
+[plugins."coderabbit@openai-curated"]
+enabled = true
+
+[plugins."browser@openai-bundled"]
+enabled = true
+
+[marketplaces.openai-bundled]
+last_updated = "2026-05-18T11:54:06Z"
+source_type = "local"
+source = "/Users/erwin/.codex/.tmp/bundled-marketplaces/openai-bundled"
+
+[marketplaces.openai-primary-runtime]
+last_updated = "2026-05-16T07:47:25Z"
+source_type = "local"
+source = "/Users/erwin/.cache/codex-runtimes/codex-primary-runtime/plugins/openai-primary-runtime"
+
+[tui.model_availability_nux]
+"gpt-5.5" = 4

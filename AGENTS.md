@@ -1,4 +1,3 @@
 - Run skill scripts with `skillx <skill-name> ...`
 - Sync agent config files with the `ai-config` Git repo through the `ai` Git alias
 - Common workflow: changes in ~/Code/ai-config -> `ai commit` -> `ai push` -> `ai pull` to sync to local system
-- Shared skills in `~/.agents/skills` and `~/.claude/skills` should be symlinked between the two locations instead of copied.

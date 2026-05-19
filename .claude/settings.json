@@ -2,9 +2,9 @@
   "permissions": {
     "allow": []
   },
+  "model": "opus[1m]",
   "enabledPlugins": {
     "canvas@claude-canvas": true
   },
-  "skipDangerousModePermissionPrompt": true,
-  "model": "opus"
+  "skipDangerousModePermissionPrompt": true
 }
