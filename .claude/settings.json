@@ -5,8 +5,19 @@
   },
   "model": "opus[1m]",
   "enabledPlugins": {
-    "canvas@claude-canvas": true
+    "canvas@claude-canvas": true,
+    "codex@openai-codex": true
   },
+  "extraKnownMarketplaces": {
+    "openai-codex": {
+      "source": {
+        "source": "github",
+        "repo": "openai/codex-plugin-cc"
+      }
+    }
+  },
+  "effortLevel": "high",
   "skipDangerousModePermissionPrompt": true,
+  "theme": "dark",
   "skipAutoPermissionPrompt": true
 }

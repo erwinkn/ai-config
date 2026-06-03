@@ -8,6 +8,8 @@ file_opener="vscode"
 service_tier = "fast"
 plan_mode_reasoning_effort = "xhigh"
 
+notify = ["/Users/erwin/.codex/computer-use/Codex Computer Use.app/Contents/SharedSupport/SkyComputerUseClient.app/Contents/MacOS/SkyComputerUseClient", "turn-ended"]
+
 [features]
 unified_exec = true
 shell_snapshot = true
@@ -17,6 +19,7 @@ multi_agent = true
 collaboration_modes = true
 voice_transcription = true
 realtime_conversation = true
+js_repl = false
 
 [projects."/Users/erwin/Code/ai-config"]
 trust_level = "trusted"
@@ -57,18 +60,17 @@ trust_level = "trusted"
 [projects."/Users/erwin/Code/theseus"]
 trust_level = "trusted"
 
+[projects."/Users/erwin/Code/equisafe/equisafe-market"]
+trust_level = "trusted"
+
+[projects."/Users/erwin/Code/equisafe/db-graph"]
+trust_level = "trusted"
+
 [mcp_servers.exa]
 url = "https://mcp.exa.ai/mcp"
 
 [mcp_servers.mobbin]
 url = "https://api.mobbin.com/mcp"
-
-[mcp_servers.scientific_papers]
-command = "/Users/erwin/.cargo/bin/uv"
-args = ["run", "sci-copilot", "serve-mcp-stdio"]
-cwd = "/Users/erwin/Code/red-metal"
-startup_timeout_sec = 20.0
-tool_timeout_sec = 120.0
 
 [mcp_servers.reducto]
 command = "uvx"
@@ -76,6 +78,23 @@ args = ["mcp-server-reducto"]
 
 [mcp_servers.red-metal-librarian]
 url = "https://librarian-production-101c.up.railway.app/mcp?secret=c045da26b6018c4bb2ebcc0b4de297be087a0348cbfd06c505c97a38394cce33"
+
+[mcp_servers.node_repl]
+args = []
+command = "/Applications/Codex.app/Contents/Resources/node_repl"
+startup_timeout_sec = 120
+
+[mcp_servers.node_repl.env]
+NODE_REPL_NATIVE_PIPE_CONNECT_TIMEOUT_MS = "1000"
+NODE_REPL_NODE_MODULE_DIRS = ""
+NODE_REPL_NODE_PATH = "/Applications/Codex.app/Contents/Resources/node"
+NODE_REPL_TRUSTED_CODE_PATHS = "/Users/erwin/.codex"
+CODEX_HOME = "/Users/erwin/.codex"
+NODE_REPL_TRUSTED_BROWSER_CLIENT_SHA256S = "4b6bfaf4ed2ce9b5cd68e60a61642eb4927a36306ba8c8993f6058607b3530fb"
+BROWSER_USE_AVAILABLE_BACKENDS = "iab"
+NODE_REPL_INSTRUCTIONS_USE_CASE_BROWSER = "Control the in-app browser in conjunction with the Browser Plugin."
+BROWSER_USE_CODEX_APP_BUILD_FLAVOR = "prod"
+CODEX_CLI_PATH = "/Applications/Codex.app/Contents/Resources/codex"
 
 [notice.model_migrations]
 "gpt-5.3-codex" = "gpt-5.4"
@@ -108,14 +127,41 @@ enabled = true
 enabled = true
 
 [marketplaces.openai-bundled]
-last_updated = "2026-05-18T11:54:06Z"
+last_updated = "2026-06-03T04:41:15Z"
 source_type = "local"
 source = "/Users/erwin/.codex/.tmp/bundled-marketplaces/openai-bundled"
 
 [marketplaces.openai-primary-runtime]
-last_updated = "2026-05-16T07:47:25Z"
+last_updated = "2026-06-01T18:43:18Z"
 source_type = "local"
 source = "/Users/erwin/.cache/codex-runtimes/codex-primary-runtime/plugins/openai-primary-runtime"
 
 [tui.model_availability_nux]
 "gpt-5.5" = 4
+
+[desktop]
+followUpQueueMode = "steer"
+composerEnterBehavior = "cmdIfMultiline"
+preventSleepWhileRunning = true
+keepRemoteControlAwakeWhilePluggedIn = true
+git-create-pull-request-as-draft = true
+notifications-turn-mode = "always"
+notifications-permissions-enabled = true
+reviewDelivery = "detached"
+show-context-window-usage = true
+
+[desktop.open-in-target-preferences]
+global = "zed"
+
+[desktop.open-in-target-preferences.perPath]
+"/Users/erwin/.codex/worktrees/1702/monolith" = "zed"
+"/Users/erwin/.codex/worktrees/3322/monolith" = "ghostty"
+"/Users/erwin/.codex/worktrees/50f0/pulse-ui" = "ghostty"
+"/Users/erwin/.codex/worktrees/8261/monolith" = "zed"
+"/Users/erwin/.codex/worktrees/9921/monolith" = "zed"
+"/Users/erwin/.codex/worktrees/c4eb/monolith" = "ghostty"
+"/Users/erwin/.codex/worktrees/f68a/monolith" = "zed"
+"/Users/erwin/Code/ai-config" = "ghostty"
+"/Users/erwin/Code/brimstone/monolith" = "zed"
+"/Users/erwin/Code/griffe" = "zed"
+"/Users/erwin/Code/transcription" = "zed"
