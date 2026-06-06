@@ -12,6 +12,18 @@
       "sourceType": "github",
       "computedHash": "1f01cf85e7786cfb38c8519f7739bdc2d41747c925ba6a237e7bdf4ce4ca5d8e"
     },
+    "handoff": {
+      "source": "openclaw/agent-skills",
+      "sourceType": "github",
+      "skillPath": "skills/handoff/SKILL.md",
+      "computedHash": "31de4e6b3496f3306d87333a3f9a4ca1d55517949cac653f644aa4276f3a35db"
+    },
+    "autoreview": {
+      "source": "openclaw/agent-skills",
+      "sourceType": "github",
+      "skillPath": "skills/autoreview/SKILL.md",
+      "computedHash": "7f9d45be16badfdd74beb42172dc5a4adc515d4ee2e79b8273fc3a1efb983c06"
+    },
     "vercel-composition-patterns": {
       "source": "vercel-labs/agent-skills",
       "sourceType": "github",
