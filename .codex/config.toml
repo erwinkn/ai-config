@@ -1,152 +1,25 @@
+file_opener = "vscode"
 model = "gpt-5.5"
 model_reasoning_effort = "high"
-sandbox_mode = "danger-full-access"
-web_search = "live"
-suppress_unstable_features_warning = true
+notify = [
+    "/Users/erwin/.codex/computer-use/Codex Computer Use.app/Contents/SharedSupport/SkyComputerUseClient.app/Contents/MacOS/SkyComputerUseClient",
+    "turn-ended",
+]
 personality = "pragmatic"
-file_opener="vscode"
-service_tier = "fast"
 plan_mode_reasoning_effort = "xhigh"
-
-notify = ["/Users/erwin/.codex/computer-use/Codex Computer Use.app/Contents/SharedSupport/SkyComputerUseClient.app/Contents/MacOS/SkyComputerUseClient", "turn-ended"]
-
-[features]
-unified_exec = true
-shell_snapshot = true
-steer = true
-personality = true
-multi_agent = true
-collaboration_modes = true
-voice_transcription = true
-realtime_conversation = true
-js_repl = false
-
-[projects."/Users/erwin/Code/ai-config"]
-trust_level = "trusted"
-
-[projects."/Users/erwin/Code/pulse-ui"]
-trust_level = "trusted"
-
-[projects."/Users/erwin/Code/brimstone/monolith-stoneware-v4"]
-trust_level = "trusted"
-
-[projects."/Users/erwin/Code/pulse-latency"]
-trust_level = "trusted"
-
-[projects."/Users/erwin/Code/cartomancer"]
-trust_level = "trusted"
-
-[projects."/Users/erwin/conductor/repo/pulse-ui/montgomery"]
-trust_level="trusted"
-
-[projects."/Users/erwin/Code/fort-bridge"]
-trust_level = "trusted"
-
-[projects."/Users/erwin/Code/griffe"]
-trust_level = "trusted"
-
-[projects."/Users/erwin/Code/brimstone/monolith"]
-trust_level = "trusted"
-
-[projects."/Users/erwin/Code/ext/litter"]
-trust_level = "trusted"
-
-[projects."/Users/erwin/Code/red-metal"]
-trust_level = "trusted"
-
-[projects."/Users/erwin/Code/equisafe"]
-trust_level = "trusted"
-
-[projects."/Users/erwin/Code/theseus"]
-trust_level = "trusted"
-
-[projects."/Users/erwin/Code/equisafe/equisafe-market"]
-trust_level = "trusted"
-
-[projects."/Users/erwin/Code/equisafe/db-graph"]
-trust_level = "trusted"
-
-[mcp_servers.exa]
-url = "https://mcp.exa.ai/mcp"
-
-[mcp_servers.mobbin]
-url = "https://api.mobbin.com/mcp"
-
-[mcp_servers.reducto]
-command = "uvx"
-args = ["mcp-server-reducto"]
-
-[mcp_servers.red-metal-librarian]
-url = "https://librarian-production-101c.up.railway.app/mcp?secret=c045da26b6018c4bb2ebcc0b4de297be087a0348cbfd06c505c97a38394cce33"
-
-[mcp_servers.node_repl]
-args = []
-command = "/Applications/Codex.app/Contents/Resources/node_repl"
-startup_timeout_sec = 120
-
-[mcp_servers.node_repl.env]
-NODE_REPL_NATIVE_PIPE_CONNECT_TIMEOUT_MS = "1000"
-NODE_REPL_NODE_MODULE_DIRS = ""
-NODE_REPL_NODE_PATH = "/Applications/Codex.app/Contents/Resources/node"
-NODE_REPL_TRUSTED_CODE_PATHS = "/Users/erwin/.codex"
-CODEX_HOME = "/Users/erwin/.codex"
-NODE_REPL_TRUSTED_BROWSER_CLIENT_SHA256S = "4b6bfaf4ed2ce9b5cd68e60a61642eb4927a36306ba8c8993f6058607b3530fb"
-BROWSER_USE_AVAILABLE_BACKENDS = "iab"
-NODE_REPL_INSTRUCTIONS_USE_CASE_BROWSER = "Control the in-app browser in conjunction with the Browser Plugin."
-BROWSER_USE_CODEX_APP_BUILD_FLAVOR = "prod"
-CODEX_CLI_PATH = "/Applications/Codex.app/Contents/Resources/codex"
-
-[notice.model_migrations]
-"gpt-5.3-codex" = "gpt-5.4"
-
-[windows]
-sandbox = "unelevated"
-
-[plugins."github@openai-curated"]
-enabled = true
-
-[plugins."vercel@openai-curated"]
-enabled = true
-
-[plugins."documents@openai-primary-runtime"]
-enabled = true
-
-[plugins."spreadsheets@openai-primary-runtime"]
-enabled = true
-
-[plugins."presentations@openai-primary-runtime"]
-enabled = true
-
-[plugins."notion@openai-curated"]
-enabled = true
-
-[plugins."coderabbit@openai-curated"]
-enabled = true
-
-[plugins."browser@openai-bundled"]
-enabled = true
-
-[marketplaces.openai-bundled]
-last_updated = "2026-06-03T04:41:15Z"
-source_type = "local"
-source = "/Users/erwin/.codex/.tmp/bundled-marketplaces/openai-bundled"
-
-[marketplaces.openai-primary-runtime]
-last_updated = "2026-06-01T18:43:18Z"
-source_type = "local"
-source = "/Users/erwin/.cache/codex-runtimes/codex-primary-runtime/plugins/openai-primary-runtime"
-
-[tui.model_availability_nux]
-"gpt-5.5" = 4
+sandbox_mode = "danger-full-access"
+service_tier = "fast"
+suppress_unstable_features_warning = true
+web_search = "live"
 
 [desktop]
-followUpQueueMode = "steer"
 composerEnterBehavior = "cmdIfMultiline"
-preventSleepWhileRunning = true
-keepRemoteControlAwakeWhilePluggedIn = true
+followUpQueueMode = "steer"
 git-create-pull-request-as-draft = true
-notifications-turn-mode = "always"
+keepRemoteControlAwakeWhilePluggedIn = true
 notifications-permissions-enabled = true
+notifications-turn-mode = "always"
+preventSleepWhileRunning = true
 reviewDelivery = "detached"
 show-context-window-usage = true
 
@@ -165,3 +38,156 @@ global = "zed"
 "/Users/erwin/Code/brimstone/monolith" = "zed"
 "/Users/erwin/Code/griffe" = "zed"
 "/Users/erwin/Code/transcription" = "zed"
+
+[features]
+collaboration_modes = true
+js_repl = false
+multi_agent = true
+personality = true
+realtime_conversation = true
+shell_snapshot = true
+steer = true
+unified_exec = true
+voice_transcription = true
+
+[marketplaces.openai-bundled]
+last_updated = "2026-06-13T07:45:39Z"
+source_type = "local"
+source = "/Users/erwin/.codex/.tmp/bundled-marketplaces/openai-bundled"
+
+[marketplaces.openai-primary-runtime]
+last_updated = "2026-06-01T18:43:18Z"
+source = "/Users/erwin/.cache/codex-runtimes/codex-primary-runtime/plugins/openai-primary-runtime"
+source_type = "local"
+
+[mcp_servers.exa]
+url = "https://mcp.exa.ai/mcp"
+
+[mcp_servers.massive]
+command = "/Users/erwin/.local/bin/mcp_massive"
+startup_timeout_sec = 30
+
+[mcp_servers.mobbin]
+url = "https://api.mobbin.com/mcp"
+
+[mcp_servers.node_repl]
+args = []
+command = "/Applications/Codex.app/Contents/Resources/cua_node/bin/node_repl"
+startup_timeout_sec = 120
+
+[mcp_servers.node_repl.env]
+NODE_REPL_NATIVE_PIPE_CONNECT_TIMEOUT_MS = "1000"
+NODE_REPL_NODE_MODULE_DIRS = "/Applications/Codex.app/Contents/Resources/cua_node/lib/node_modules"
+NODE_REPL_NODE_PATH = "/Applications/Codex.app/Contents/Resources/cua_node/bin/node"
+NODE_REPL_TRUSTED_CODE_PATHS = "/Users/erwin/.codex"
+CODEX_HOME = "/Users/erwin/.codex"
+NODE_REPL_TRUSTED_BROWSER_CLIENT_SHA256S = "27dca86fd6b571c49414a4b78e46b57bcf683a46cd1319799c11fbb6cfae3110"
+BROWSER_USE_AVAILABLE_BACKENDS = "iab"
+NODE_REPL_INSTRUCTIONS_USE_CASE_BROWSER = "Control the in-app browser in conjunction with the Browser Plugin."
+BROWSER_USE_CODEX_APP_BUILD_FLAVOR = "prod"
+BROWSER_USE_CODEX_APP_VERSION = "26.609.41114"
+CODEX_CLI_PATH = "/Applications/Codex.app/Contents/Resources/codex"
+
+[mcp_servers.railway]
+args = ["mcp"]
+command = "railway"
+
+[mcp_servers.red-metal-librarian]
+url = "https://librarian-production-101c.up.railway.app/mcp?secret=c045da26b6018c4bb2ebcc0b4de297be087a0348cbfd06c505c97a38394cce33"
+
+[mcp_servers.reducto]
+args = ["mcp-server-reducto"]
+command = "uvx"
+
+[notice.model_migrations]
+"gpt-5.3-codex" = "gpt-5.4"
+
+[plugins."browser@openai-bundled"]
+enabled = true
+
+[plugins."coderabbit@openai-curated"]
+enabled = true
+
+[plugins."documents@openai-primary-runtime"]
+enabled = true
+
+[plugins."github@openai-curated"]
+enabled = true
+
+[plugins."notion@openai-curated"]
+enabled = true
+
+[plugins."presentations@openai-primary-runtime"]
+enabled = true
+
+[plugins."spreadsheets@openai-primary-runtime"]
+enabled = true
+
+[plugins."vercel@openai-curated"]
+enabled = true
+
+[projects."/Users/erwin/Code/ai-config"]
+trust_level = "trusted"
+
+[projects."/Users/erwin/Code/brimstone/monolith"]
+trust_level = "trusted"
+
+[projects."/Users/erwin/Code/brimstone/monolith-stoneware-v4"]
+trust_level = "trusted"
+
+[projects."/Users/erwin/Code/cartomancer"]
+trust_level = "trusted"
+
+[projects."/Users/erwin/Code/equisafe"]
+trust_level = "trusted"
+
+[projects."/Users/erwin/Code/equisafe/db-graph"]
+trust_level = "trusted"
+
+[projects."/Users/erwin/Code/equisafe/equisafe-market"]
+trust_level = "trusted"
+
+[projects."/Users/erwin/Code/ext/litter"]
+trust_level = "trusted"
+
+[projects."/Users/erwin/Code/fort-bridge"]
+trust_level = "trusted"
+
+[projects."/Users/erwin/Code/griffe"]
+trust_level = "trusted"
+
+[projects."/Users/erwin/Code/pulse-latency"]
+trust_level = "trusted"
+
+[projects."/Users/erwin/Code/pulse-ui"]
+trust_level = "trusted"
+
+[projects."/Users/erwin/Code/red-metal"]
+trust_level = "trusted"
+
+[projects."/Users/erwin/Code/theseus"]
+trust_level = "trusted"
+
+[projects."/Users/erwin/Documents/Codex/2026-06-11/on-my-macbook-i-can-only"]
+trust_level = "trusted"
+
+[projects."/Users/erwin/Documents/Codex/2026-06-11/where-can-i-see-the-programs"]
+trust_level = "trusted"
+
+[projects."/Users/erwin/conductor/repo/pulse-ui/montgomery"]
+trust_level = "trusted"
+
+[projects."/Users/erwin/Documents/Codex/2026-06-13/how-do-people-customize-their-ghostty"]
+trust_level = "trusted"
+
+[projects."/Users/erwin/Documents/Codex/2026-06-13/clean-up-the-files-on-my"]
+trust_level = "trusted"
+
+[projects."/Users/erwin/Code/aristotle"]
+trust_level = "trusted"
+
+[tui.model_availability_nux]
+"gpt-5.5" = 4
+
+[windows]
+sandbox = "unelevated"
