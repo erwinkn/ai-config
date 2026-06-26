@@ -7,6 +7,7 @@ import copy
 import json
 import os
 import queue
+import signal
 import subprocess
 import sys
 import tempfile
@@ -86,6 +87,7 @@ def run(args: list[str], cwd: Path, *, input_text: str | None = None, check: boo
         cwd=cwd,
         input=input_text,
         text=True,
+        errors="replace",
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,
     )
@@ -104,6 +106,8 @@ def run_with_heartbeat(
     heartbeat_seconds: int = 60,
     stream_output: bool = False,
     stream_display: Callable[[str, str], str | None] | None = None,
+    completion_probe: Callable[[], bool] | None = None,
+    allow_live_completion: bool = False,
 ) -> subprocess.CompletedProcess[str]:
     if stream_output:
         return run_with_stream(
@@ -113,8 +117,12 @@ def run_with_heartbeat(
             label=label,
             heartbeat_seconds=heartbeat_seconds,
             stream_display=stream_display,
+            completion_probe=completion_probe,
+            allow_live_completion=allow_live_completion,
         )
     started = time.monotonic()
+    latest_stdout = ""
+    latest_stderr = ""
     proc = subprocess.Popen(
         args,
         cwd=cwd,
@@ -122,6 +130,7 @@ def run_with_heartbeat(
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,
         text=True,
+        **process_group_kwargs(),
     )
     first_communicate = True
     while True:
@@ -131,8 +140,19 @@ def run_with_heartbeat(
                 timeout=heartbeat_seconds,
             )
             return subprocess.CompletedProcess(args, int(proc.returncode or 0), stdout, stderr)
-        except subprocess.TimeoutExpired:
+        except subprocess.TimeoutExpired as exc:
             first_communicate = False
+            latest_stdout = timeout_text(exc.output) or latest_stdout
+            latest_stderr = timeout_text(exc.stderr) or latest_stderr
+            if proc.poll() is not None:
+                cleanup_lingering_process_group(proc)
+                close_process_pipes(proc)
+                return subprocess.CompletedProcess(args, int(proc.returncode or 0), latest_stdout, latest_stderr)
+            if allow_live_completion and completion_probe and completion_probe():
+                print(f"review completed: {label} produced structured output; cleaning up lingering pid={proc.pid}", file=sys.stderr, flush=True)
+                cleanup_lingering_process_group(proc)
+                close_process_pipes(proc)
+                return subprocess.CompletedProcess(args, 0, latest_stdout, latest_stderr)
             elapsed = int(time.monotonic() - started)
             print(f"review still running: {label} elapsed={elapsed}s pid={proc.pid}", file=sys.stderr, flush=True)
 
@@ -145,6 +165,8 @@ def run_with_stream(
     label: str,
     heartbeat_seconds: int,
     stream_display: Callable[[str, str], str | None] | None,
+    completion_probe: Callable[[], bool] | None,
+    allow_live_completion: bool,
 ) -> subprocess.CompletedProcess[str]:
     started = time.monotonic()
     proc = subprocess.Popen(
@@ -155,6 +177,7 @@ def run_with_stream(
         stderr=subprocess.PIPE,
         text=True,
         bufsize=1,
+        **process_group_kwargs(),
     )
     events: queue.Queue[tuple[str, str | None]] = queue.Queue()
     stdout_parts: list[str] = []
@@ -190,6 +213,19 @@ def run_with_stream(
         try:
             name, line = events.get(timeout=heartbeat_seconds)
         except queue.Empty:
+            completed = bool(completion_probe and completion_probe())
+            if proc.poll() is not None or (allow_live_completion and completed):
+                if proc.poll() is None:
+                    print(f"review completed: {label} produced structured output; cleaning up lingering pid={proc.pid}", file=sys.stderr, flush=True)
+                    returncode = 0
+                else:
+                    returncode = int(proc.returncode or 0)
+                cleanup_lingering_process_group(proc)
+                close_process_pipes(proc)
+                for thread in threads:
+                    thread.join(timeout=1)
+                stdin_thread.join(timeout=1)
+                return subprocess.CompletedProcess(args, returncode, "".join(stdout_parts), "".join(stderr_parts))
             elapsed = int(time.monotonic() - started)
             print(f"review still running: {label} elapsed={elapsed}s pid={proc.pid}", file=sys.stderr, flush=True)
             continue
@@ -205,12 +241,95 @@ def run_with_stream(
             target = sys.stdout if name == "stdout" else sys.stderr
             target.write(display)
             target.flush()
+        if allow_live_completion and completion_probe and completion_probe():
+            print(f"review completed: {label} produced structured output; cleaning up lingering pid={proc.pid}", file=sys.stderr, flush=True)
+            cleanup_lingering_process_group(proc)
+            close_process_pipes(proc)
+            for thread in threads:
+                thread.join(timeout=1)
+            stdin_thread.join(timeout=1)
+            return subprocess.CompletedProcess(args, 0, "".join(stdout_parts), "".join(stderr_parts))
 
     for thread in threads:
         thread.join()
     stdin_thread.join(timeout=1)
     returncode = proc.wait()
     return subprocess.CompletedProcess(args, returncode, "".join(stdout_parts), "".join(stderr_parts))
+
+
+def process_group_kwargs() -> dict[str, Any]:
+    if os.name == "nt":
+        return {"creationflags": subprocess.CREATE_NEW_PROCESS_GROUP}
+    return {"start_new_session": True}
+
+
+def close_process_pipes(proc: subprocess.Popen[str]) -> None:
+    for stream in (proc.stdin, proc.stdout, proc.stderr):
+        if stream is None:
+            continue
+        try:
+            stream.close()
+        except OSError:
+            pass
+
+
+def cleanup_lingering_process_group(proc: subprocess.Popen[str], *, grace_seconds: float = 1.0) -> None:
+    if os.name == "nt":
+        if proc.poll() is None:
+            terminate_process(proc, grace_seconds=grace_seconds)
+        return
+    pgid = proc.pid
+    try:
+        os.killpg(pgid, signal.SIGTERM)
+    except ProcessLookupError:
+        return
+    except OSError:
+        if proc.poll() is None:
+            terminate_process(proc, grace_seconds=grace_seconds)
+        return
+    if proc.poll() is None:
+        try:
+            proc.wait(timeout=grace_seconds)
+            return
+        except subprocess.TimeoutExpired:
+            pass
+    try:
+        os.killpg(pgid, signal.SIGKILL)
+    except ProcessLookupError:
+        return
+    except OSError:
+        if proc.poll() is None:
+            terminate_process(proc, grace_seconds=grace_seconds)
+        return
+    if proc.poll() is None:
+        try:
+            proc.wait(timeout=grace_seconds)
+        except subprocess.TimeoutExpired:
+            pass
+
+
+def terminate_process(proc: subprocess.Popen[str], *, grace_seconds: float) -> None:
+    try:
+        proc.terminate()
+        proc.wait(timeout=grace_seconds)
+        return
+    except ProcessLookupError:
+        return
+    except subprocess.TimeoutExpired:
+        pass
+    try:
+        proc.kill()
+        proc.wait(timeout=grace_seconds)
+    except (ProcessLookupError, subprocess.TimeoutExpired):
+        pass
+
+
+def timeout_text(value: Any) -> str:
+    if value is None:
+        return ""
+    if isinstance(value, bytes):
+        return value.decode("utf-8", errors="replace")
+    return str(value)
 
 
 def git(repo: Path, *args: str, check: bool = True) -> str:
@@ -482,6 +601,20 @@ def write_json_temp(data: dict[str, Any]) -> Path:
     return Path(handle.name)
 
 
+def codex_result_ready(output_path: Path, stream_display: "CodexStreamDisplay | None") -> bool:
+    if stream_display is not None and not stream_display.completed:
+        return False
+    try:
+        text = output_path.read_text()
+    except OSError:
+        return False
+    try:
+        report = extract_json(text)
+    except SystemExit:
+        return False
+    return all(key in report for key in SCHEMA["required"])
+
+
 def run_codex(args: argparse.Namespace, repo: Path, prompt: str) -> str:
     if not args.tools:
         raise SystemExit("--no-tools is not supported by the Codex engine; use --engine claude --no-tools for a no-tools run")
@@ -511,13 +644,16 @@ def run_codex(args: argparse.Namespace, repo: Path, prompt: str) -> str:
             "-",
         ]
     )
+    stream_display = CodexStreamDisplay() if args.stream_engine_output else None
     result = run_with_heartbeat(
         cmd,
         repo,
         input_text=prompt,
         label="codex",
         stream_output=args.stream_engine_output,
-        stream_display=CodexStreamDisplay() if args.stream_engine_output else None,
+        stream_display=stream_display,
+        completion_probe=lambda: codex_result_ready(output_path, stream_display),
+        allow_live_completion=args.stream_engine_output,
     )
     try:
         output = output_path.read_text()
@@ -634,6 +770,7 @@ class CodexStreamDisplay:
         self.activity_seconds = activity_seconds
         self.hidden_events = 0
         self.last_visible = time.monotonic()
+        self.completed = False
 
     def __call__(self, name: str, line: str) -> str | None:
         if name != "stdout":
@@ -648,6 +785,7 @@ class CodexStreamDisplay:
         if event_type == "turn.started":
             return self.visible("codex turn started\n")
         if event_type == "turn.completed":
+            self.completed = True
             usage = event.get("usage")
             message = format_codex_usage(usage) + "\n" if isinstance(usage, dict) else "codex turn completed\n"
             return self.visible(self.flush_hidden() + message)

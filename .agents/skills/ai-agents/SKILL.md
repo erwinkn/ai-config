@@ -87,13 +87,20 @@ agent -p --output-format json --mode ask --trust '<task>'
 opencode run '<task>'
 opencode run --format json '<task>'
 opencode run --dir /path/to/repo '<task>'
+opencode run -m <provider>/<model> --dir /path/to/repo '<task>'
 opencode run --fork -s <session-id> '<task>'
 ```
 
 - `run`: headless execution
 - `--format json`: raw JSON events
 - `--dir`: run against a specific directory
+- `-m`, `--model`: pin the delegated run to a specific provider/model
 - `--fork`: continue from a session without mutating the original
+
+Use `opencode models` or `opencode models <provider>` to confirm the exact
+provider/model id before delegating to a newly added model. For frontend-heavy
+tasks, a cost-effective frontend model such as GLM 5.2 can be a good Opencode
+delegate once its provider id is configured locally.
 
 ### Gemini
 
