@@ -1,4 +1,0 @@
-interface:
-  display_name: "CLI for Agents"
-  short_description: "Design or review agent-friendly CLIs"
-  default_prompt: "Use $cli-for-agents to design or review this CLI for headless agent use, focusing on non-interactive flags, layered help with examples, stdin/pipelines, actionable errors, idempotency, dry-run support, and predictable output."
