@@ -27,10 +27,22 @@ PROMPT
 - `--ephemeral`: throwaway runs you'll never resume (quick analysis, one-off questions).
 - Stderr noise about ignored config keys or MCP transport errors is normal; judge the run by its final message and the diff.
 
+## Git writes
+
+The workspace-write sandbox blocks writes inside `.git/` — a run that tries to `git commit` (or stage, rebase, etc.) dies on `Unable to create '.git/index.lock'`. Default split: Codex writes code, you do the git mutations after reviewing the diff. If committing is intrinsic to the delegated task, grant `.git` explicitly:
+
+```bash
+codex exec -s workspace-write -C /path/to/repo \
+  -c 'sandbox_workspace_write.writable_roots=["/path/to/repo/.git"]' ...
+```
+
+Network stays blocked either way, so `git push`, `git fetch`, and remote syncs are always yours, never Codex's.
+
 ## Execution
 
 - One clear task per run. Split unrelated asks into separate runs.
-- Runs take minutes at xhigh effort. Use the Bash tool's `run_in_background` for anything non-trivial and check back; foreground only for small, fast asks.
+- Runs take minutes at xhigh effort. Use the Bash tool's `run_in_background` for anything non-trivial; foreground only for small, fast asks.
+- Waiting on a background run: the harness notifies you when the command exits — do not poll with `ps`, PID checks, or `/proc` (which doesn't exist on macOS). To peek at interim progress, Read the background task's output file.
 - Follow-ups on the same thread: `codex exec resume --last '<delta instruction>'` (or `resume <session-id>`). Send only the delta, not the whole prompt again.
 - For parallel Codex runs against the same repo, isolate each in its own git worktree first — Codex has no worktree flag of its own.
 

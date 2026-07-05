@@ -35,7 +35,7 @@ codex review --base main 'Challenge the implementation approach itself: question
 
 ## Execution
 
-- Reviews of non-trivial diffs take minutes. Run via the Bash tool with `run_in_background` and collect output when done; foreground only for 1–2 file diffs.
+- Reviews of non-trivial diffs take minutes. Run via the Bash tool with `run_in_background`; the harness notifies you when it exits — don't poll with `ps` or PID checks (and `/proc` doesn't exist on macOS). Foreground only for 1–2 file diffs.
 - Review is read-only by design: do not fix findings as part of the same delegation, and don't let the review run mutate anything.
 - Stderr noise about ignored config keys or MCP transport errors is normal.
 

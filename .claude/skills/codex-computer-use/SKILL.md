@@ -43,7 +43,7 @@ Same rules as any headless Codex run — self-contained, XML-block structure:
 
 ## Execution
 
-- UI runs are slow (each action is a round-trip). Use `run_in_background` for multi-step tasks; warn the user that Codex will be controlling the screen while it runs.
+- UI runs are slow (each action is a round-trip). Use `run_in_background` for multi-step tasks and wait for the harness's completion notification rather than polling; warn the user that Codex will be controlling the screen while it runs.
 - The run needs the Mac unlocked and the target app reachable; screen-recording/accessibility permissions for the Computer Use app must already be granted (they are on this machine).
 - Follow-ups: `codex exec resume --last '<delta instruction>'` — keep `--enable plugins` on the resume call too.
 - Afterwards, verify the outcome through a non-UI channel when possible (file exists, calendar event present, etc.) rather than trusting the self-report.

@@ -13,7 +13,7 @@ Non-negotiables:
 
 - Run from the target repo root; `codex review` reviews git state, not file paths.
 - Pick the scope flag (`--uncommitted`, `--base <ref>`, `--commit <sha>`) from what the caller asked; sanity-check there is actually something to review first (`git status --short`, `git diff --shortstat`).
-- Reviews of non-trivial diffs take minutes — run via Bash `run_in_background` and collect the output when done.
+- Reviews of non-trivial diffs take minutes — run via Bash `run_in_background`; the harness notifies you when it exits. Never poll with `ps`, PID checks, or `/proc` (macOS has none).
 - The run is read-only: never fix findings or mutate the repo.
 
 Where you may add value without contaminating the review: after relaying the findings verbatim, you may append a clearly separated section flagging any finding that plainly contradicts code you can see (quote the code), so the caller can weigh it. Label it as your annotation, not Codex's.

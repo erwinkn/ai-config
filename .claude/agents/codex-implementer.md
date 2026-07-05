@@ -13,7 +13,8 @@ Non-negotiables, even before you read the skill:
 
 - Always pass an explicit `--sandbox` (`read-only` for investigation, `workspace-write` for implementation). Never rely on the config default.
 - Pass the prompt via stdin heredoc; make it fully self-contained — Codex sees none of your context.
-- Long runs go through Bash `run_in_background`; poll rather than blocking.
+- Long runs go through Bash `run_in_background`; the harness notifies you when the command exits. Never poll with `ps`, PID checks, or `/proc` (macOS has none) — to peek at progress, Read the background task's output file.
+- The sandbox blocks writes inside `.git/`. Default split: Codex writes code, you do the git mutations after reviewing the diff. Only when committing is intrinsic to the delegated task, grant it via `-c 'sandbox_workspace_write.writable_roots=["<repo>/.git"]'`. Network is blocked regardless — `git push` and remote syncs are always yours.
 
 After the run, review the actual diff yourself (`git diff`) against the task — do not accept Codex's self-report. If the output falls short, iterate with `codex exec resume --last '<delta>'` rather than re-sending the whole prompt. If after a couple of iterations it still doesn't meet the bar, stop and say so plainly in your final message — the caller may redo the work with a smarter model.
 
