@@ -33,7 +33,9 @@ and codex-computer-use skills; for work they don't cover (investigation, data an
 - Claude models (sonnet-5, opus-4.8, fable-5) run via the Agent/Workflow model parameter.
 
 Using gpt-5.5 inside workflows and subagents (the model parameter only takes Claude models,
-so use a wrapper):
-- Spawn a thin Claude wrapper agent with `model: 'sonnet', effort: 'low'` whose prompt
-instructs it to write a self-contained codex prompt, run `codex exec` via Bash, and return
-the output verbatim.
+so use the dedicated driver agents):
+- `codex-implementer`, `codex-reviewer`, and `codex-computer-use` (defined in
+~/.claude/agents/, defaulting to opus-4.8) drive Codex per the matching skill — pass them
+via `subagent_type` on the Agent tool or `agentType` in Workflow `agent()` calls. Give them
+the task and repo path; they compose the codex prompt, run it, and judge the result
+themselves.

@@ -51,4 +51,4 @@ Codex gets no conversation context — the prompt must stand alone. Write it lik
 
 ## Inside workflows and subagents
 
-The Agent/Workflow `model` parameter only takes Claude models. To fan out gpt-5.5 work, spawn a thin wrapper: a Claude agent with `model: 'sonnet', effort: 'low'` whose prompt says to compose a self-contained codex prompt per this skill, run `codex exec` via Bash, and return the final message verbatim without doing any work itself.
+Use the dedicated `codex-implementer` agent (defaults to opus-4.8): `subagent_type: 'codex-implementer'` with the Agent tool, or `agentType: 'codex-implementer'` in Workflow `agent()` calls. It owns the full loop from this skill — composes the codex prompt, runs it, reviews the diff, iterates via `resume` if the output falls short. Give it the task, the repo path, and what done looks like; don't pre-write the codex prompt for it. Override its model per call only if the driving itself is trivial.

@@ -47,4 +47,4 @@ codex review --base main 'Challenge the implementation approach itself: question
 
 ## Inside workflows and subagents
 
-To include a Codex review as one voice in a multi-agent review, spawn a thin wrapper: a Claude agent with `model: 'sonnet', effort: 'low'` whose prompt says to run the appropriate `codex review` command via Bash from the repo root and return its output verbatim, adding no findings of its own.
+Use the dedicated `codex-reviewer` agent (defaults to opus-4.8): `subagent_type: 'codex-reviewer'` with the Agent tool, or `agentType: 'codex-reviewer'` in Workflow `agent()` calls. It picks the scope flags, runs the review from the repo root, and returns Codex's findings verbatim without adding its own. Give it the repo path, the scope (base ref / uncommitted / commit), and any focus instructions.

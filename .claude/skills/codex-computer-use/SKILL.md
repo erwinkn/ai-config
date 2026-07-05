@@ -47,3 +47,7 @@ Same rules as any headless Codex run — self-contained, XML-block structure:
 - The run needs the Mac unlocked and the target app reachable; screen-recording/accessibility permissions for the Computer Use app must already be granted (they are on this machine).
 - Follow-ups: `codex exec resume --last '<delta instruction>'` — keep `--enable plugins` on the resume call too.
 - Afterwards, verify the outcome through a non-UI channel when possible (file exists, calendar event present, etc.) rather than trusting the self-report.
+
+## Inside workflows and subagents
+
+Use the dedicated `codex-computer-use` agent (defaults to opus-4.8): `subagent_type: 'codex-computer-use'` with the Agent tool, or `agentType: 'codex-computer-use'` in Workflow `agent()` calls. It enforces the safety contract above — the stop-list, app scoping, untrusted-content rule — so pass it the task, the allowed app(s), and any specific action the user pre-approved. UI runs serialize on one screen: never fan out more than one of these at a time.

@@ -17,5 +17,8 @@ todos/
 history.jsonl
 stats-cache.json
 
-# Auto-generated
-agents/
+# Auto-generated (except hand-written codex driver agents)
+agents/*
+!agents/codex-implementer.md
+!agents/codex-reviewer.md
+!agents/codex-computer-use.md
