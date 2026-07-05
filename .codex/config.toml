@@ -1,6 +1,6 @@
 file_opener = "vscode"
 model = "gpt-5.5"
-model_reasoning_effort = "high"
+model_reasoning_effort = "xhigh"
 notify = [
     "/Users/erwin/.codex/computer-use/Codex Computer Use.app/Contents/SharedSupport/SkyComputerUseClient.app/Contents/MacOS/SkyComputerUseClient",
     "turn-ended",
@@ -18,7 +18,7 @@ followUpQueueMode = "steer"
 git-create-pull-request-as-draft = true
 keepRemoteControlAwakeWhilePluggedIn = true
 notifications-permissions-enabled = true
-notifications-turn-mode = "always"
+notifications-turn-mode = "unfocused"
 preventSleepWhileRunning = true
 reviewDelivery = "detached"
 show-context-window-usage = true
@@ -38,72 +38,75 @@ global = "zed"
 "/Users/erwin/Code/brimstone/monolith" = "zed"
 "/Users/erwin/Code/griffe" = "zed"
 "/Users/erwin/Code/transcription" = "zed"
+"/Users/erwin/.codex/worktrees/b152/equisafe-market" = "ghostty"
+"/Users/erwin/Code/equisafe/equisafe-market" = "zed"
 
 [features]
+apps = false
+browser_use = false
+browser_use_external = false
+browser_use_full_cdp_access = false
 collaboration_modes = true
-js_repl = false
+in_app_browser = false
 multi_agent = true
 personality = true
+plugins = false
 realtime_conversation = true
 shell_snapshot = true
 steer = true
 unified_exec = true
 voice_transcription = true
+memories = true
+prevent_idle_sleep = true
 
 [marketplaces.openai-bundled]
-last_updated = "2026-06-13T07:45:39Z"
+last_updated = "2026-07-01T06:36:00Z"
 source_type = "local"
 source = "/Users/erwin/.codex/.tmp/bundled-marketplaces/openai-bundled"
 
 [marketplaces.openai-primary-runtime]
-last_updated = "2026-06-01T18:43:18Z"
-source = "/Users/erwin/.cache/codex-runtimes/codex-primary-runtime/plugins/openai-primary-runtime"
+last_updated = "2026-07-01T07:09:53Z"
 source_type = "local"
-
-[mcp_servers.exa]
-url = "https://mcp.exa.ai/mcp"
+source = "/Users/erwin/.cache/codex-runtimes/codex-primary-runtime/plugins/openai-primary-runtime"
 
 [mcp_servers.massive]
 command = "/Users/erwin/.local/bin/mcp_massive"
-startup_timeout_sec = 30
+startup_timeout_sec = 30.0
 
 [mcp_servers.mobbin]
 url = "https://api.mobbin.com/mcp"
 
-[mcp_servers.node_repl]
-args = []
-command = "/Applications/Codex.app/Contents/Resources/cua_node/bin/node_repl"
-startup_timeout_sec = 120
-
-[mcp_servers.node_repl.env]
-NODE_REPL_NATIVE_PIPE_CONNECT_TIMEOUT_MS = "1000"
-NODE_REPL_NODE_MODULE_DIRS = "/Applications/Codex.app/Contents/Resources/cua_node/lib/node_modules"
-NODE_REPL_NODE_PATH = "/Applications/Codex.app/Contents/Resources/cua_node/bin/node"
-NODE_REPL_TRUSTED_CODE_PATHS = "/Users/erwin/.codex"
-CODEX_HOME = "/Users/erwin/.codex"
-NODE_REPL_TRUSTED_BROWSER_CLIENT_SHA256S = "27dca86fd6b571c49414a4b78e46b57bcf683a46cd1319799c11fbb6cfae3110"
-BROWSER_USE_AVAILABLE_BACKENDS = "iab"
-NODE_REPL_INSTRUCTIONS_USE_CASE_BROWSER = "Control the in-app browser in conjunction with the Browser Plugin."
-BROWSER_USE_CODEX_APP_BUILD_FLAVOR = "prod"
-BROWSER_USE_CODEX_APP_VERSION = "26.609.41114"
-CODEX_CLI_PATH = "/Applications/Codex.app/Contents/Resources/codex"
-
 [mcp_servers.railway]
-args = ["mcp"]
 command = "railway"
+args = ["mcp"]
 
-[mcp_servers.red-metal-librarian]
-url = "https://librarian-production-101c.up.railway.app/mcp?secret=c045da26b6018c4bb2ebcc0b4de297be087a0348cbfd06c505c97a38394cce33"
+[mcp_servers.excalidraw]
+url = "https://api.excalidraw.com/api/v1/mcp"
+bearer_token_env_var = "EXCALIDRAW_API_KEY"
 
-[mcp_servers.reducto]
-args = ["mcp-server-reducto"]
-command = "uvx"
+[mcp_servers.excalidraw.tools.edit_scene_content]
+approval_mode = "approve"
+
+[mcp_servers.excalidraw.tools.get_scene]
+approval_mode = "approve"
+
+[mcp_servers.excalidraw.tools.get_scene_content]
+approval_mode = "approve"
+
+[mcp_servers.excalidraw.tools.read_excalidraw_format]
+approval_mode = "approve"
+
+[mcp_servers.excalidraw.tools.search_scene_content]
+approval_mode = "approve"
+
+[mcp_servers.excalidraw.tools.take_screenshot]
+approval_mode = "approve"
+
+[mcp_servers.cloudflare-api]
+url = "https://mcp.cloudflare.com/mcp"
 
 [notice.model_migrations]
 "gpt-5.3-codex" = "gpt-5.4"
-
-[plugins."browser@openai-bundled"]
-enabled = true
 
 [plugins."coderabbit@openai-curated"]
 enabled = true
@@ -125,6 +128,18 @@ enabled = true
 
 [plugins."vercel@openai-curated"]
 enabled = true
+
+[plugins."pdf@openai-primary-runtime"]
+enabled = true
+
+[plugins."computer-use@openai-bundled"]
+enabled = true
+
+[plugins."template-creator@openai-primary-runtime"]
+enabled = true
+
+[plugins."cloudflare@openai-curated-remote"]
+enabled = false
 
 [projects."/Users/erwin/Code/ai-config"]
 trust_level = "trusted"
@@ -184,6 +199,78 @@ trust_level = "trusted"
 trust_level = "trusted"
 
 [projects."/Users/erwin/Code/aristotle"]
+trust_level = "trusted"
+
+[projects."/Users/erwin/Documents/Codex/2026-06-21/i"]
+trust_level = "trusted"
+
+[projects."/Users/erwin/Documents/Codex/2026-06-21/i-2"]
+trust_level = "trusted"
+
+[projects."/Users/erwin/Documents/Codex/2026-06-21/i-3"]
+trust_level = "trusted"
+
+[projects."/Users/erwin/Code/excellence"]
+trust_level = "trusted"
+
+[projects."/Users/erwin/Documents/Codex/2026-06-23/hz"]
+trust_level = "trusted"
+
+[projects."/Users/erwin/Documents/Codex/2026-06-23/how-do-cloudflare-workflows-stack-up"]
+trust_level = "trusted"
+
+[projects."/Users/erwin/Documents/Codex/2026-06-24/so-on-this-branch-we-ve"]
+trust_level = "trusted"
+
+[projects."/Users/erwin/Documents/Codex/2026-06-24/let"]
+trust_level = "trusted"
+
+[projects."/Users/erwin/Documents/Codex/2026-06-24/in"]
+trust_level = "trusted"
+
+[projects."/Users/erwin/Documents/Codex/2026-06-25/a"]
+trust_level = "trusted"
+
+[projects."/Users/erwin/Documents/Codex/2026-06-25/rai"]
+trust_level = "trusted"
+
+[projects."/Users/erwin/Documents/Codex/2026-06-25/cm"]
+trust_level = "trusted"
+
+[projects."/Users/erwin/Documents/Codex/2026-06-25/whe"]
+trust_level = "trusted"
+
+[projects."/Users/erwin/Documents/Codex/2026-06-26/gener"]
+trust_level = "trusted"
+
+[projects."/Users/erwin/Documents/Codex/2026-06-26/what-s-the-standard-for-precommit"]
+trust_level = "trusted"
+
+[projects."/Users/erwin/Code/equisafe/infra"]
+trust_level = "trusted"
+
+[projects."/Users/erwin/Documents/Codex/2026-06-27/give-me-an-overview"]
+trust_level = "trusted"
+
+[projects."/Users/erwin/Documents/Codex/2026-06-27/let-s"]
+trust_level = "trusted"
+
+[projects."/Users/erwin"]
+trust_level = "trusted"
+
+[projects."/Users/erwin/Documents/Codex/2026-06-30/are-y"]
+trust_level = "trusted"
+
+[projects."/Users/erwin/Documents/Codex/2026-06-30/are"]
+trust_level = "trusted"
+
+[projects."/Users/erwin/Documents/Codex/2026-06-30/inst"]
+trust_level = "trusted"
+
+[projects."/Users/erwin/Documents/Codex/2026-07-01/what"]
+trust_level = "trusted"
+
+[projects."/private/tmp/claude-501/-Users-erwin-Code-ai-config/3e3f5c96-8eb4-4b7e-8ba9-964074295e29/scratchpad/gittest"]
 trust_level = "trusted"
 
 [tui.model_availability_nux]

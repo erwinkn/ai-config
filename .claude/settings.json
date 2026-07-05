@@ -6,13 +6,20 @@
   "model": "opus[1m]",
   "enabledPlugins": {
     "canvas@claude-canvas": true,
-    "codex@openai-codex": true
+    "codex@openai-codex": true,
+    "cloudflare@cloudflare": true
   },
   "extraKnownMarketplaces": {
     "openai-codex": {
       "source": {
         "source": "github",
         "repo": "openai/codex-plugin-cc"
+      }
+    },
+    "cloudflare": {
+      "source": {
+        "source": "github",
+        "repo": "cloudflare/skills"
       }
     }
   },
