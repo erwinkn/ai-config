@@ -97,7 +97,67 @@ def test_long_running_process_without_completion_is_not_cut_short(autoreview: Mo
     assert "natural done" in result.stdout
 
 
-def write_fake_codex(path: Path, *, stream: bool) -> None:
+def test_nonstream_completion_needs_two_stable_ticks(autoreview: ModuleType) -> None:
+    probe_results = iter([True, False, True, True, True, True, True, True])
+    cmd = [sys.executable, "-c", "import time; time.sleep(5)"]
+    started = time.monotonic()
+    result = autoreview.run_with_heartbeat(
+        cmd,
+        Path.cwd(),
+        label="fake-nonstream",
+        heartbeat_seconds=0.2,
+        completion_probe=lambda: next(probe_results, True),
+        allow_live_completion=True,
+    )
+    elapsed = time.monotonic() - started
+    # first True is reset by the following False, so completion needs ticks 3+4
+    assert_at_least(elapsed, 0.75, "non-stream stable probe")
+    assert_less(elapsed, 2.0, "non-stream stable probe")
+    assert result.returncode == 0
+
+
+def test_max_seconds_kills_hung_process(autoreview: ModuleType) -> None:
+    cmd = [sys.executable, "-c", "import time; time.sleep(5)"]
+    started = time.monotonic()
+    try:
+        autoreview.run_with_heartbeat(
+            cmd,
+            Path.cwd(),
+            label="hung",
+            heartbeat_seconds=0.2,
+            max_seconds=0.5,
+        )
+    except SystemExit as exc:
+        message = str(exc)
+    else:
+        raise AssertionError("expected SystemExit from max-seconds deadline")
+    elapsed = time.monotonic() - started
+    assert_less(elapsed, 2.0, "max-seconds deadline")
+    assert "timed out" in message
+
+
+def test_stream_eof_while_alive_respects_deadline(autoreview: ModuleType) -> None:
+    cmd = [sys.executable, "-c", "import os, time; os.close(1); os.close(2); time.sleep(5)"]
+    started = time.monotonic()
+    try:
+        autoreview.run_with_heartbeat(
+            cmd,
+            Path.cwd(),
+            label="daemonized",
+            heartbeat_seconds=0.2,
+            stream_output=True,
+            max_seconds=0.5,
+        )
+    except SystemExit as exc:
+        message = str(exc)
+    else:
+        raise AssertionError("expected SystemExit from max-seconds deadline")
+    elapsed = time.monotonic() - started
+    assert_less(elapsed, 2.0, "stream EOF-while-alive deadline")
+    assert "timed out" in message
+
+
+def write_fake_codex(path: Path, *, stream: bool, linger: bool = False) -> None:
     report = {
         "findings": [],
         "overall_correctness": "patch is correct",
@@ -115,7 +175,10 @@ report = {json.dumps(report)!r}
 output_path = sys.argv[sys.argv.index("--output-last-message") + 1]
 with open(output_path, "w", encoding="utf-8") as handle:
     handle.write(report)
-if {stream!r}:
+if {linger!r}:
+    print("fake codex lingering", flush=True)
+    time.sleep(5)
+elif {stream!r}:
     print(json.dumps({{"type": "turn.completed", "usage": {{"input_tokens": 1}}}}), flush=True)
     time.sleep(5)
 else:
@@ -134,6 +197,7 @@ def codex_args(codex_bin: Path, *, stream: bool) -> Namespace:
         model=None,
         thinking=None,
         stream_engine_output=stream,
+        max_seconds=0,
     )
 
 
@@ -160,6 +224,19 @@ def test_run_codex_uses_last_message_when_pipes_remain_open(autoreview: ModuleTy
     assert report["overall_correctness"] == "patch is correct"
 
 
+def test_run_codex_nonstream_recovers_from_lingering_process(autoreview: ModuleType) -> None:
+    with tempfile.TemporaryDirectory(prefix="autoreview-fake-codex.") as tempdir:
+        fake_codex = Path(tempdir) / "codex"
+        write_fake_codex(fake_codex, stream=False, linger=True)
+        with_short_heartbeat(autoreview)
+        started = time.monotonic()
+        raw = autoreview.run_codex(codex_args(fake_codex, stream=False), Path.cwd(), "review")
+        elapsed = time.monotonic() - started
+    assert_less(elapsed, 2.0, "run_codex non-stream lingering process")
+    report = json.loads(raw)
+    assert report["overall_correctness"] == "patch is correct"
+
+
 def test_run_codex_stream_completion_cleans_lingering_process(autoreview: ModuleType) -> None:
     with tempfile.TemporaryDirectory(prefix="autoreview-fake-codex.") as tempdir:
         fake_codex = Path(tempdir) / "codex"
@@ -179,7 +256,11 @@ def main() -> int:
         test_exited_child_with_inherited_pipe,
         test_stream_completed_probe_cleans_live_process,
         test_long_running_process_without_completion_is_not_cut_short,
+        test_nonstream_completion_needs_two_stable_ticks,
+        test_max_seconds_kills_hung_process,
+        test_stream_eof_while_alive_respects_deadline,
         test_run_codex_uses_last_message_when_pipes_remain_open,
+        test_run_codex_nonstream_recovers_from_lingering_process,
         test_run_codex_stream_completion_cleans_lingering_process,
     ]
     for test in tests:

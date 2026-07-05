@@ -81,16 +81,33 @@ SCHEMA: dict[str, Any] = {
 }
 
 
-def run(args: list[str], cwd: Path, *, input_text: str | None = None, check: bool = True) -> subprocess.CompletedProcess[str]:
-    result = subprocess.run(
-        args,
-        cwd=cwd,
-        input=input_text,
-        text=True,
-        errors="replace",
-        stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE,
-    )
+def run(
+    args: list[str],
+    cwd: Path,
+    *,
+    input_text: str | None = None,
+    check: bool = True,
+    timeout: float | None = None,
+    env: dict[str, str] | None = None,
+) -> subprocess.CompletedProcess[str]:
+    try:
+        result = subprocess.run(
+            args,
+            cwd=cwd,
+            input=input_text,
+            stdin=None if input_text is not None else subprocess.DEVNULL,
+            text=True,
+            errors="replace",
+            timeout=timeout,
+            env=env,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+        )
+    except subprocess.TimeoutExpired as exc:
+        cmd = " ".join(args)
+        if check:
+            raise SystemExit(f"command timed out after {timeout}s: {cmd}")
+        return subprocess.CompletedProcess(args, 124, timeout_text(exc.output), timeout_text(exc.stderr))
     if check and result.returncode != 0:
         cmd = " ".join(args)
         raise SystemExit(f"command failed ({result.returncode}): {cmd}\n{result.stderr or result.stdout}")
@@ -108,6 +125,7 @@ def run_with_heartbeat(
     stream_display: Callable[[str, str], str | None] | None = None,
     completion_probe: Callable[[], bool] | None = None,
     allow_live_completion: bool = False,
+    max_seconds: float | None = None,
 ) -> subprocess.CompletedProcess[str]:
     if stream_output:
         return run_with_stream(
@@ -119,10 +137,12 @@ def run_with_heartbeat(
             stream_display=stream_display,
             completion_probe=completion_probe,
             allow_live_completion=allow_live_completion,
+            max_seconds=max_seconds,
         )
     started = time.monotonic()
     latest_stdout = ""
     latest_stderr = ""
+    ready_ticks = 0
     proc = subprocess.Popen(
         args,
         cwd=cwd,
@@ -149,10 +169,18 @@ def run_with_heartbeat(
                 close_process_pipes(proc)
                 return subprocess.CompletedProcess(args, int(proc.returncode or 0), latest_stdout, latest_stderr)
             if allow_live_completion and completion_probe and completion_probe():
-                print(f"review completed: {label} produced structured output; cleaning up lingering pid={proc.pid}", file=sys.stderr, flush=True)
-                cleanup_lingering_process_group(proc)
-                close_process_pipes(proc)
-                return subprocess.CompletedProcess(args, 0, latest_stdout, latest_stderr)
+                # Without an event stream the only completion signal is the result
+                # file; require it to stay valid across two ticks so a mid-write
+                # snapshot cannot cut short a healthy run.
+                ready_ticks += 1
+                if ready_ticks >= 2:
+                    print(f"review completed: {label} produced structured output; cleaning up lingering pid={proc.pid}", file=sys.stderr, flush=True)
+                    cleanup_lingering_process_group(proc)
+                    close_process_pipes(proc)
+                    return subprocess.CompletedProcess(args, 0, latest_stdout, latest_stderr)
+            else:
+                ready_ticks = 0
+            enforce_deadline(proc, label, started, max_seconds)
             elapsed = int(time.monotonic() - started)
             print(f"review still running: {label} elapsed={elapsed}s pid={proc.pid}", file=sys.stderr, flush=True)
 
@@ -167,6 +195,7 @@ def run_with_stream(
     stream_display: Callable[[str, str], str | None] | None,
     completion_probe: Callable[[], bool] | None,
     allow_live_completion: bool,
+    max_seconds: float | None = None,
 ) -> subprocess.CompletedProcess[str]:
     started = time.monotonic()
     proc = subprocess.Popen(
@@ -226,6 +255,7 @@ def run_with_stream(
                     thread.join(timeout=1)
                 stdin_thread.join(timeout=1)
                 return subprocess.CompletedProcess(args, returncode, "".join(stdout_parts), "".join(stderr_parts))
+            enforce_deadline(proc, label, started, max_seconds)
             elapsed = int(time.monotonic() - started)
             print(f"review still running: {label} elapsed={elapsed}s pid={proc.pid}", file=sys.stderr, flush=True)
             continue
@@ -249,11 +279,27 @@ def run_with_stream(
                 thread.join(timeout=1)
             stdin_thread.join(timeout=1)
             return subprocess.CompletedProcess(args, 0, "".join(stdout_parts), "".join(stderr_parts))
+        enforce_deadline(proc, label, started, max_seconds)
 
     for thread in threads:
         thread.join()
     stdin_thread.join(timeout=1)
-    returncode = proc.wait()
+    # Streams hit EOF but the child may still be alive (daemonized); keep
+    # heartbeat/probe/deadline handling instead of blocking in a bare wait().
+    while True:
+        try:
+            returncode = proc.wait(timeout=heartbeat_seconds)
+            break
+        except subprocess.TimeoutExpired:
+            if allow_live_completion and completion_probe and completion_probe():
+                print(f"review completed: {label} produced structured output; cleaning up lingering pid={proc.pid}", file=sys.stderr, flush=True)
+                cleanup_lingering_process_group(proc)
+                close_process_pipes(proc)
+                returncode = 0
+                break
+            enforce_deadline(proc, label, started, max_seconds)
+            elapsed = int(time.monotonic() - started)
+            print(f"review still running: {label} elapsed={elapsed}s pid={proc.pid}", file=sys.stderr, flush=True)
     return subprocess.CompletedProcess(args, returncode, "".join(stdout_parts), "".join(stderr_parts))
 
 
@@ -324,6 +370,18 @@ def terminate_process(proc: subprocess.Popen[str], *, grace_seconds: float) -> N
         pass
 
 
+def enforce_deadline(proc: subprocess.Popen[str], label: str, started: float, max_seconds: float | None) -> None:
+    if not max_seconds:
+        return
+    elapsed = time.monotonic() - started
+    if elapsed < max_seconds:
+        return
+    print(f"review timed out: {label} elapsed={int(elapsed)}s exceeds max-seconds={int(max_seconds)}; killing pid={proc.pid}", file=sys.stderr, flush=True)
+    cleanup_lingering_process_group(proc)
+    close_process_pipes(proc)
+    raise SystemExit(f"{label} review timed out after {int(elapsed)}s (--max-seconds {int(max_seconds)}); process group killed")
+
+
 def timeout_text(value: Any) -> str:
     if value is None:
         return ""
@@ -332,8 +390,9 @@ def timeout_text(value: Any) -> str:
     return str(value)
 
 
-def git(repo: Path, *args: str, check: bool = True) -> str:
-    return run([resolve_command("git", repo), *args], repo, check=check).stdout
+def git(repo: Path, *args: str, check: bool = True, timeout: float | None = None) -> str:
+    env = dict(os.environ, GIT_TERMINAL_PROMPT="0")
+    return run([resolve_command("git", repo), *args], repo, check=check, timeout=timeout, env=env).stdout
 
 
 def repo_root() -> Path:
@@ -387,7 +446,7 @@ def detect_pr_base(repo: Path) -> str | None:
     gh_bin = find_command("gh", repo)
     if not gh_bin:
         return None
-    result = run([gh_bin, "pr", "view", "--json", "baseRefName", "--jq", ".baseRefName"], repo, check=False)
+    result = run([gh_bin, "pr", "view", "--json", "baseRefName", "--jq", ".baseRefName"], repo, check=False, timeout=60)
     base = result.stdout.strip()
     return f"origin/{base}" if result.returncode == 0 and base else None
 
@@ -497,7 +556,7 @@ def local_bundle(repo: Path) -> str:
 
 
 def branch_bundle(repo: Path, base_ref: str) -> str:
-    git(repo, "fetch", "origin", "--quiet", check=False)
+    git(repo, "fetch", "origin", "--quiet", check=False, timeout=120)
     return "\n\n".join(
         [
             "# Branch Diff",
@@ -653,7 +712,8 @@ def run_codex(args: argparse.Namespace, repo: Path, prompt: str) -> str:
         stream_output=args.stream_engine_output,
         stream_display=stream_display,
         completion_probe=lambda: codex_result_ready(output_path, stream_display),
-        allow_live_completion=args.stream_engine_output,
+        allow_live_completion=True,
+        max_seconds=args.max_seconds or None,
     )
     try:
         output = output_path.read_text()
@@ -692,6 +752,7 @@ def run_claude(args: argparse.Namespace, repo: Path, prompt: str) -> str:
         label="claude",
         stream_output=args.stream_engine_output,
         stream_display=ClaudeStreamDisplay() if args.stream_engine_output else None,
+        max_seconds=args.max_seconds or None,
     )
     if result.returncode != 0:
         raise SystemExit(f"claude engine failed ({result.returncode})\n{result.stderr or result.stdout}")
@@ -717,7 +778,7 @@ def run_droid(args: argparse.Namespace, repo: Path, prompt: str) -> str:
         cmd.extend(["--model", args.model])
     if not args.tools:
         cmd.extend(["--disabled-tools", "*"])
-    result = run_with_heartbeat(cmd, repo, label="droid", stream_output=args.stream_engine_output)
+    result = run_with_heartbeat(cmd, repo, label="droid", stream_output=args.stream_engine_output, max_seconds=args.max_seconds or None)
     prompt_path.unlink(missing_ok=True)
     if result.returncode != 0:
         raise SystemExit(f"droid engine failed ({result.returncode})\n{result.stderr or result.stdout}")
@@ -759,7 +820,7 @@ def run_copilot(args: argparse.Namespace, repo: Path, prompt: str) -> str:
         )
         if args.web_search:
             cmd.append("--allow-all-urls")
-        result = run_with_heartbeat(cmd, Path(tempdir), label="copilot", stream_output=args.stream_engine_output)
+        result = run_with_heartbeat(cmd, Path(tempdir), label="copilot", stream_output=args.stream_engine_output, max_seconds=args.max_seconds or None)
     if result.returncode != 0:
         raise SystemExit(f"copilot engine failed ({result.returncode})\n{result.stderr or result.stdout}")
     return result.stdout
@@ -1108,6 +1169,16 @@ def finish_parallel_tests(proc: subprocess.Popen, started: float) -> int:
     return int(proc.returncode or 0)
 
 
+def env_int(name: str, default: int) -> int:
+    value = os.environ.get(name, "").strip()
+    if not value:
+        return default
+    try:
+        return int(value)
+    except ValueError:
+        raise SystemExit(f"invalid {name}: {value}")
+
+
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Bundle-driven AI code review.")
     parser.add_argument("--mode", choices=["auto", "local", "uncommitted", "branch", "commit"], default="auto")
@@ -1150,12 +1221,20 @@ def parse_args() -> argparse.Namespace:
         default=os.environ.get("AUTOREVIEW_PARALLEL_TESTS_SHELL", "default"),
         help="Shell for --parallel-tests. Default preserves Python shell=True platform behavior; use powershell or pwsh for PowerShell-specific commands.",
     )
+    parser.add_argument(
+        "--max-seconds",
+        type=int,
+        default=env_int("AUTOREVIEW_MAX_SECONDS", 2400),
+        help="Kill the review engine process group and fail after this many seconds. 0 disables the ceiling.",
+    )
     parser.add_argument("--require-finding", action="append", default=[], help="Require finding text to contain this substring.")
     parser.add_argument("--expect-findings", action="store_true", help="Treat findings as success; for harness acceptance tests.")
     parser.add_argument("--dry-run", action="store_true")
     args = parser.parse_args()
     if args.engine not in ENGINES:
         raise SystemExit(f"invalid --engine/AUTOREVIEW_ENGINE: {args.engine}")
+    if args.max_seconds < 0:
+        raise SystemExit(f"invalid --max-seconds/AUTOREVIEW_MAX_SECONDS: {args.max_seconds}")
     return args
 
 

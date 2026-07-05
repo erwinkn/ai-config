@@ -30,8 +30,9 @@ Use when:
 - Never switch or override the requested review engine/model. If the review hits model capacity, retry the same command a few times with the same engine/model.
 - Be patient with large bundles. Structured review can take up to 30 minutes while the model call is active, especially with Codex tools or web search.
 - Treat heartbeat lines like `review still running: ... elapsed=... pid=...` as healthy progress, not a hang. Let the helper continue while heartbeats are advancing. Pass `--stream-engine-output` when live engine text is useful; Codex and Claude filter tool/file chatter, other engines pass raw output through.
-- Do not kill a review just because it has been quiet for 2-5 minutes, or because it is still running under the 30-minute window. Inspect the process only after missing multiple expected heartbeats, after 30 minutes, or after an obviously failed subprocess; prefer letting the same helper command finish.
-- If heartbeats continue suspiciously after Codex has printed structured JSON or usage, inspect the reported child process state and the Codex last-message/log output before waiting indefinitely. A defunct selected child with a valid last-message means the review result likely exists while a wrapper or inherited pipe is lingering; do not interrupt healthy heartbeats that are still advancing normally.
+- Do not kill a review just because it has been quiet for 2-5 minutes, or because it is still running under the 30-minute window. Inspect the process only after missing multiple expected heartbeats or after an obviously failed subprocess; prefer letting the same helper command finish.
+- The helper enforces its own hard ceiling (`--max-seconds`, default 2400s / env `AUTOREVIEW_MAX_SECONDS`): it kills the engine process group and exits nonzero instead of hanging. Never kill the helper externally to enforce a timeout; let it fail on its own and retry the same command.
+- If Codex writes its structured result but the process lingers, the helper detects the finished result (stable last-message file, or turn completion when streaming), kills the lingering process group, and returns the result on its own. Do not interrupt healthy heartbeats that are still advancing normally.
 - Tools are useful in review mode. The helper allows read-only inspection tools and web search by default so reviewers can check dependency contracts, upstream docs, and current behavior.
 - Security perspective is always included, but it should not cripple legitimate functionality. Report security findings only when the change creates a concrete, actionable risk or removes an important safety check.
 - For regression provenance, keep roles separate: blamed code author, blamed PR author, PR merger/committer, current PR author, and PR/date. If no blamed PR is traceable, use the blamed commit as the provenance: commit SHA, date, and author username. Do not guess a merger or frame missing PR metadata as a separate finding.
@@ -83,12 +84,6 @@ Committed single change:
 
 ```bash
 <autoreview-helper> --mode commit --commit HEAD
-```
-
-or with the helper:
-
-```bash
-/Users/steipete/Projects/agent-scripts/skills/autoreview/scripts/autoreview --mode commit --commit HEAD
 ```
 
 Use commit review for already-landed or already-pushed work on `main`. Reviewing
@@ -146,16 +141,11 @@ Run the helper directly so target selection, engine choice, structured validatio
 
 ## Helper
 
-OpenClaw repo-local helper:
+Repo-local helper (vendored from steipete's `agent-scripts`; in an upstream
+checkout the same helper lives at `skills/autoreview/scripts/autoreview`):
 
 ```bash
 .agents/skills/autoreview/scripts/autoreview --help
-```
-
-`agent-scripts` checkout helper:
-
-```bash
-skills/autoreview/scripts/autoreview --help
 ```
 
 On native Windows, invoke the extensionless Python helper through Python:
@@ -174,18 +164,6 @@ skills/autoreview/scripts/test-review-harness --fixture benign --engine codex
 skills\autoreview\scripts\test-review-harness.ps1 -Fixture benign -Engine codex
 ```
 
-Global helper from `agent-scripts`:
-
-```bash
-~/.codex/skills/agent-scripts/autoreview/scripts/autoreview --help
-```
-
-If installed from `agent-scripts`, path is:
-
-```bash
-/Users/steipete/Projects/agent-scripts/skills/autoreview/scripts/autoreview --help
-```
-
 The helper:
 
 - chooses dirty local changes first
@@ -202,6 +180,9 @@ The helper:
 - supports opt-in review panels with `--panel` / `--reviewers`, plus per-engine `--model` and `--thinking`
 - allows read-only tools and web search by default where the selected CLI supports them; forbids nested review in the prompt; Codex is run through `codex exec` with read-only sandbox and structured output
 - prints `review still running: <engine> elapsed=<seconds>s pid=<pid>` to stderr at long-running intervals while waiting for the selected review engine, unless streamed output or compact Codex activity has been visible recently
+- enforces `--max-seconds` (default 2400, env `AUTOREVIEW_MAX_SECONDS`, 0 disables): kills the engine process group and exits nonzero instead of hanging forever
+- recovers when Codex finishes but the process lingers: once the structured result file stays valid across two heartbeats (or the turn completes while streaming), the helper kills the lingering process group and uses the result
+- runs `git`/`gh` with prompts disabled (`GIT_TERMINAL_PROMPT=0`, stdin closed) and timeouts on `git fetch` and `gh pr view`, so target selection cannot hang silently before the first heartbeat
 - prints `autoreview clean: no accepted/actionable findings reported` when the selected review command exits 0
 - exits nonzero when accepted/actionable findings are present
 
