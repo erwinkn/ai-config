@@ -42,7 +42,8 @@ Network stays blocked either way, so `git push`, `git fetch`, and remote syncs a
 
 - One clear task per run. Split unrelated asks into separate runs.
 - Runs take minutes at xhigh effort. Use the Bash tool's `run_in_background` for anything non-trivial; foreground only for small, fast asks.
-- Waiting on a background run: the harness notifies you when the command exits — do not poll with `ps`, PID checks, or `/proc` (which doesn't exist on macOS). To peek at interim progress, Read the background task's output file.
+- Waiting on a background run, **in the main session**: the harness notifies you when the command exits — do not poll with `ps`, PID checks, or `/proc` (which doesn't exist on macOS). To peek at interim progress, Read the background task's output file.
+- Waiting **inside a subagent**: completion notifications never arrive — ending your turn terminates the agent and orphans the run. Launch with a sentinel (`codex exec ... >"$LOG" 2>&1; echo "codex-exit:$?" >>"$LOG"`), then block with repeated bounded foreground waits (`for i in $(seq 100); do grep -q codex-exit "$LOG" && break; sleep 5; done; grep codex-exit "$LOG" || echo STILL_RUNNING`), re-issuing the call until the sentinel appears. Never end the turn while a run is in flight.
 - Follow-ups on the same thread: `codex exec resume --last '<delta instruction>'` (or `resume <session-id>`). Send only the delta, not the whole prompt again.
 - For parallel Codex runs against the same repo, isolate each in its own git worktree first — Codex has no worktree flag of its own.
 

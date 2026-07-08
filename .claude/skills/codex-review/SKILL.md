@@ -35,7 +35,8 @@ codex review --base main 'Challenge the implementation approach itself: question
 
 ## Execution
 
-- Reviews of non-trivial diffs take minutes. Run via the Bash tool with `run_in_background`; the harness notifies you when it exits — don't poll with `ps` or PID checks (and `/proc` doesn't exist on macOS). Foreground only for 1–2 file diffs.
+- Reviews of non-trivial diffs take minutes. Run via the Bash tool with `run_in_background`; in the main session the harness notifies you when it exits — don't poll with `ps` or PID checks (and `/proc` doesn't exist on macOS). Foreground only for 1–2 file diffs.
+- Inside a subagent, notifications never arrive and ending the turn orphans the run: launch with a sentinel (`codex review ... >"$LOG" 2>&1; echo "codex-exit:$?" >>"$LOG"`) and block with repeated bounded foreground waits (`for i in $(seq 100); do grep -q codex-exit "$LOG" && break; sleep 5; done; grep codex-exit "$LOG" || echo STILL_RUNNING`) until the sentinel appears.
 - Review is read-only by design: do not fix findings as part of the same delegation, and don't let the review run mutate anything.
 - Stderr noise about ignored config keys or MCP transport errors is normal.
 
