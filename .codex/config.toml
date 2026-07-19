@@ -1,14 +1,16 @@
 file_opener = "vscode"
-model = "gpt-5.5"
-model_reasoning_effort = "xhigh"
+model = "gpt-5.6-sol"
+model_reasoning_effort = "high"
 notify = [
     "/Users/erwin/.codex/computer-use/Codex Computer Use.app/Contents/SharedSupport/SkyComputerUseClient.app/Contents/MacOS/SkyComputerUseClient",
     "turn-ended",
 ]
 personality = "pragmatic"
+model_verbosity = "low"
+model_reasoning_summary = "concise"
 plan_mode_reasoning_effort = "xhigh"
 sandbox_mode = "danger-full-access"
-service_tier = "fast"
+service_tier = "priority"
 suppress_unstable_features_warning = true
 web_search = "live"
 
@@ -22,6 +24,8 @@ notifications-turn-mode = "unfocused"
 preventSleepWhileRunning = true
 reviewDelivery = "detached"
 show-context-window-usage = true
+dock-icon-preference = "app-default"
+conversationDetailMode = "STEPS_PROSE"
 
 [desktop.open-in-target-preferences]
 global = "zed"
@@ -58,14 +62,15 @@ unified_exec = true
 voice_transcription = true
 memories = true
 prevent_idle_sleep = true
+js_repl = true
 
 [marketplaces.openai-bundled]
-last_updated = "2026-07-01T06:36:00Z"
+last_updated = "2026-07-16T18:32:25Z"
 source_type = "local"
 source = "/Users/erwin/.codex/.tmp/bundled-marketplaces/openai-bundled"
 
 [marketplaces.openai-primary-runtime]
-last_updated = "2026-07-01T07:09:53Z"
+last_updated = "2026-07-16T19:10:18Z"
 source_type = "local"
 source = "/Users/erwin/.cache/codex-runtimes/codex-primary-runtime/plugins/openai-primary-runtime"
 
@@ -105,6 +110,30 @@ approval_mode = "approve"
 [mcp_servers.cloudflare-api]
 url = "https://mcp.cloudflare.com/mcp"
 
+[mcp_servers.node_repl]
+args = []
+command = "/Applications/ChatGPT.app/Contents/Resources/cua_node/bin/node_repl"
+startup_timeout_sec = 120
+
+[mcp_servers.node_repl.env]
+NODE_REPL_NATIVE_PIPE_CONNECT_TIMEOUT_MS = "1000"
+NODE_REPL_NODE_MODULE_DIRS = "/Applications/ChatGPT.app/Contents/Resources/cua_node/lib/node_modules"
+NODE_REPL_NODE_PATH = "/Applications/ChatGPT.app/Contents/Resources/cua_node/bin/node"
+NODE_REPL_TRUSTED_CODE_PATHS = "/Users/erwin/.codex"
+CODEX_HOME = "/Users/erwin/.codex"
+NODE_REPL_TRUSTED_BROWSER_CLIENT_SHA256S = "6d25aa7656feac858f3a3bdaea5bcbab0dbfd426c9de8e6931ce90c399ee8e4f,7abc8b22abade944bcd80135500416c7aee60c0e94290c7d644b54428a0013ab"
+BROWSER_USE_AVAILABLE_BACKENDS = ""
+NODE_REPL_INSTRUCTIONS_USE_CASE_COMPUTER_USE = "Control desktop apps on macOS through Computer Use."
+BROWSER_USE_CODEX_APP_BUILD_FLAVOR = "prod"
+BROWSER_USE_CODEX_APP_VERSION = "26.707.91948"
+CODEX_CLI_PATH = "/Applications/ChatGPT.app/Contents/Resources/codex"
+
+[mcp_servers.computer-use]
+command = "./Codex Computer Use.app/Contents/SharedSupport/SkyComputerUseClient.app/Contents/MacOS/SkyComputerUseClient"
+args = ["mcp"]
+cwd = "."
+enabled = true
+
 [notice.model_migrations]
 "gpt-5.3-codex" = "gpt-5.4"
 
@@ -140,6 +169,9 @@ enabled = true
 
 [plugins."cloudflare@openai-curated-remote"]
 enabled = false
+
+[plugins."visualize@openai-bundled"]
+enabled = true
 
 [projects."/Users/erwin/Code/ai-config"]
 trust_level = "trusted"
@@ -273,8 +305,27 @@ trust_level = "trusted"
 [projects."/private/tmp/claude-501/-Users-erwin-Code-ai-config/3e3f5c96-8eb4-4b7e-8ba9-964074295e29/scratchpad/gittest"]
 trust_level = "trusted"
 
+[projects."/Users/erwin/Code/portuguese"]
+trust_level = "trusted"
+
+[projects."/Users/erwin/Code/accord"]
+trust_level = "trusted"
+
+[projects."/Users/erwin/Documents/Codex/2026-07-10/do-we"]
+trust_level = "trusted"
+
+[projects."/Users/erwin/Documents/Codex/2026-07-10/do-we-have-access-to-option"]
+trust_level = "trusted"
+
+[projects."/Users/erwin/Documents/Codex/2026-07-10/ex"]
+trust_level = "trusted"
+
+[projects."/Users/erwin/.superconductor/one-shot/naming"]
+trust_level = "trusted"
+
 [tui.model_availability_nux]
 "gpt-5.5" = 4
+"gpt-5.6-sol" = 2
 
 [windows]
 sandbox = "unelevated"
