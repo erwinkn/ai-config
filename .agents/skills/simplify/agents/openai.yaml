@@ -1,4 +1,0 @@
-interface:
-  display_name: "Simplify"
-  short_description: "Review and clean changed code"
-  default_prompt: "Use $simplify to review changed files for reuse, code quality, and efficiency issues, apply fixes, and summarize outcomes. If extra arguments are supplied, treat them as additional focus."
