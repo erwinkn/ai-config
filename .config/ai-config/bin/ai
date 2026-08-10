@@ -689,7 +689,7 @@ function runGit(args) {
   const result = spawnSync(
     "git",
     [`--git-dir=${gitDir}`, `--work-tree=${workTree}`, ...args],
-    { stdio: "inherit" },
+    { cwd: workTree, stdio: "inherit" },
   );
   if (result.error) throw result.error;
   return result.status ?? 1;

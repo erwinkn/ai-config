@@ -18,6 +18,11 @@ captured_root="$temporary_root/config"
 captured_active_root="$temporary_root/active"
 restore_active_on_error=0
 
+home_git() {
+    git -C "$ai_work_tree" --git-dir="$ai_git_dir" \
+        --work-tree="$ai_work_tree" "$@"
+}
+
 cleanup() {
     rm -rf "$temporary_root"
 }
@@ -168,7 +173,7 @@ if [[ ! -d "$ai_git_dir" ]]; then
         git --git-dir="$ai_git_dir" remote set-url origin "$origin_url"
     fi
     backup_checkout_conflicts
-    git --git-dir="$ai_git_dir" --work-tree="$ai_work_tree" checkout
+    home_git checkout
 else
     if [[ ! -f "$ai_git_dir/HEAD" ]]; then
         echo "setup-macos: $ai_git_dir exists but is not a Git repository." >&2
@@ -176,13 +181,12 @@ else
     fi
     restore_active_on_error=1
     for relative in .claude/settings.json .codex/config.toml; do
-        if git --git-dir="$ai_git_dir" ls-files --error-unmatch "$relative" \
+        if home_git ls-files --error-unmatch "$relative" \
             >/dev/null 2>&1; then
-            git --git-dir="$ai_git_dir" --work-tree="$ai_work_tree" \
-                checkout -- "$relative"
+            home_git checkout -- "$relative"
         fi
     done
-    git --git-dir="$ai_git_dir" --work-tree="$ai_work_tree" pull --ff-only
+    home_git pull --ff-only
 fi
 
 mkdir -p "$HOME/.config/ai-config/local"

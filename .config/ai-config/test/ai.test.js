@@ -40,8 +40,9 @@ function createFixture(t) {
   };
 }
 
-function run(fixture, args) {
+function run(fixture, args, options = {}) {
   const result = spawnSync(process.execPath, [ai, ...args], {
+    cwd: options.cwd,
     env: fixture.env,
     encoding: "utf8",
   });
@@ -231,4 +232,27 @@ test("a lock owned by a dead process is recovered", (t) => {
   run(fixture, ["apply"]);
 
   assert.equal(fs.existsSync(lock), false);
+});
+
+test("Git path arguments are resolved from the home worktree root", (t) => {
+  const fixture = createFixture(t);
+  const gitDir = path.join(fixture.root, "mirror.git");
+  const nested = path.join(fixture.home, "Code", "project");
+  fs.mkdirSync(nested, { recursive: true });
+  fs.writeFileSync(path.join(fixture.home, "root.txt"), "tracked from home\n");
+  const initialized = spawnSync("git", ["init", "--bare", gitDir], {
+    encoding: "utf8",
+  });
+  assert.equal(initialized.status, 0, initialized.stderr);
+  fixture.env.AI_CONFIG_GIT_DIR = gitDir;
+  fixture.env.AI_CONFIG_WORK_TREE = fixture.home;
+
+  run(fixture, ["git", "add", "root.txt"], { cwd: nested });
+
+  const tracked = spawnSync(
+    "git",
+    [`--git-dir=${gitDir}`, "ls-files", "--error-unmatch", "root.txt"],
+    { encoding: "utf8" },
+  );
+  assert.equal(tracked.status, 0, tracked.stderr);
 });
