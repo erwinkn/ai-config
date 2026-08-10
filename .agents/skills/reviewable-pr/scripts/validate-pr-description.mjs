@@ -51,12 +51,26 @@ function readStdin() {
 }
 
 function loadPullRequest(repo, pr) {
-  const output = execFileSync(
+  const metadataOutput = execFileSync(
     "gh",
-    ["pr", "view", String(pr), "--repo", repo, "--json", "body,files,url"],
+    ["pr", "view", String(pr), "--repo", repo, "--json", "body,url"],
     { encoding: "utf8" },
   );
-  return JSON.parse(output);
+  const pullRequest = JSON.parse(metadataOutput);
+  const files = [];
+
+  for (let page = 1; ; page += 1) {
+    const filesOutput = execFileSync(
+      "gh",
+      ["api", `repos/${repo}/pulls/${pr}/files?per_page=100&page=${page}`],
+      { encoding: "utf8" },
+    );
+    const pageFiles = JSON.parse(filesOutput);
+    files.push(...pageFiles.map(({ filename }) => ({ path: filename })));
+    if (pageFiles.length < 100) break;
+  }
+
+  return { ...pullRequest, files };
 }
 
 function count(text, pattern) {
