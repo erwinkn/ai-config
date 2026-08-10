@@ -1,0 +1,8 @@
+{
+  "__ai_config": {
+    "delete": [
+      ["enabledPlugins", "device-only-plugin"]
+    ]
+  },
+  "theme": "dark"
+}

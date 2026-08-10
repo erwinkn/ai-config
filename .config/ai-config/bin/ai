@@ -1,0 +1,756 @@
+#!/usr/bin/env node
+
+"use strict";
+
+const crypto = require("node:crypto");
+const fs = require("node:fs");
+const os = require("node:os");
+const path = require("node:path");
+const { spawnSync } = require("node:child_process");
+
+class ConfigError extends Error {}
+
+const LOCAL_METADATA_KEY = "__ai_config";
+
+let tomlModule;
+
+function toml() {
+  if (tomlModule) return tomlModule;
+  try {
+    tomlModule = require("smol-toml");
+  } catch (error) {
+    throw new ConfigError(
+      "The TOML dependency is missing. Run the repository setup command again.",
+      { cause: error },
+    );
+  }
+  return tomlModule;
+}
+
+function configPaths() {
+  const home = os.homedir();
+  const activeRoot = process.env.AI_CONFIG_ACTIVE_HOME ?? home;
+  const configRoot =
+    process.env.AI_CONFIG_HOME ?? path.join(home, ".config", "ai-config");
+  const stateRoot =
+    process.env.AI_CONFIG_STATE_HOME ??
+    path.join(home, ".local", "state", "ai-config");
+  return {
+    sharedClaude: path.join(configRoot, "shared", "claude.json"),
+    sharedCodex: path.join(configRoot, "shared", "codex.toml"),
+    localClaude: path.join(configRoot, "local", "claude.json"),
+    localCodex: path.join(configRoot, "local", "codex.toml"),
+    activeClaude: path.join(activeRoot, ".claude", "settings.json"),
+    activeCodex: path.join(activeRoot, ".codex", "config.toml"),
+    snapshotClaude: path.join(stateRoot, "last-rendered", "claude.json"),
+    snapshotCodex: path.join(stateRoot, "last-rendered", "codex.toml"),
+    state: path.join(stateRoot, "render-state.json"),
+    lock: path.join(stateRoot, "config.lock"),
+  };
+}
+
+function loadJson(file, { required = false } = {}) {
+  if (!fs.existsSync(file)) {
+    if (required) throw new ConfigError(`Missing shared configuration: ${file}`);
+    return {};
+  }
+  const value = JSON.parse(fs.readFileSync(file, "utf8"));
+  if (!isObject(value)) throw new ConfigError(`Expected a JSON object in ${file}`);
+  return value;
+}
+
+function loadToml(file, { required = false } = {}) {
+  if (!fs.existsSync(file)) {
+    if (required) throw new ConfigError(`Missing shared configuration: ${file}`);
+    return {};
+  }
+  return toml().parse(fs.readFileSync(file, "utf8"));
+}
+
+function isObject(value) {
+  return value !== null && typeof value === "object" && !Array.isArray(value) && !(value instanceof Date);
+}
+
+function deepMerge(base, overlay) {
+  const result = { ...base };
+  for (const [key, value] of Object.entries(overlay)) {
+    result[key] =
+      isObject(result[key]) && isObject(value)
+        ? deepMerge(result[key], value)
+        : value;
+  }
+  return result;
+}
+
+function valuesEqual(left, right) {
+  if (left instanceof Date && right instanceof Date) {
+    return left.toISOString() === right.toISOString();
+  }
+  if (Array.isArray(left) && Array.isArray(right)) {
+    return JSON.stringify(left) === JSON.stringify(right);
+  }
+  return left === right;
+}
+
+function validatePath(value, file) {
+  if (
+    !Array.isArray(value) ||
+    value.length === 0 ||
+    value.some((part) => typeof part !== "string" || part.length === 0)
+  ) {
+    throw new ConfigError(
+      `Expected each deletion in ${file} to be a non-empty array of path segments.`,
+    );
+  }
+  return value;
+}
+
+function loadLocalDocument(file, loader) {
+  const document = loader(file);
+  const metadata = document[LOCAL_METADATA_KEY];
+  const values = { ...document };
+  delete values[LOCAL_METADATA_KEY];
+  if (metadata === undefined) return { values, deletions: [], replacements: [] };
+  if (!isObject(metadata)) {
+    throw new ConfigError(`Expected ${LOCAL_METADATA_KEY} to be an object in ${file}`);
+  }
+  const deletions = metadata.delete ?? [];
+  const replacements = metadata.replace ?? [];
+  if (!Array.isArray(deletions)) {
+    throw new ConfigError(`Expected ${LOCAL_METADATA_KEY}.delete to be an array in ${file}`);
+  }
+  if (!Array.isArray(replacements)) {
+    throw new ConfigError(`Expected ${LOCAL_METADATA_KEY}.replace to be an array in ${file}`);
+  }
+  return {
+    values,
+    deletions: deletions.map((value) => validatePath(value, file)),
+    replacements: replacements.map((value) => validatePath(value, file)),
+  };
+}
+
+function loadLocalLayer(paths, tool) {
+  return tool === "claude"
+    ? loadLocalDocument(paths.localClaude, loadJson)
+    : loadLocalDocument(paths.localCodex, loadToml);
+}
+
+function isPathPrefix(prefix, value) {
+  return (
+    prefix.length <= value.length &&
+    prefix.every((part, index) => part === value[index])
+  );
+}
+
+function removeRelatedDeletions(deletions, target) {
+  return deletions.filter(
+    (value) => !isPathPrefix(value, target) && !isPathPrefix(target, value),
+  );
+}
+
+function addDeletion(deletions, target) {
+  if (deletions.some((value) => isPathPrefix(value, target))) return deletions;
+  return [
+    ...deletions.filter((value) => !isPathPrefix(target, value)),
+    target,
+  ];
+}
+
+function addReplacement(replacements, target) {
+  if (replacements.some((value) => isPathPrefix(value, target))) {
+    return replacements;
+  }
+  return [
+    ...replacements.filter((value) => !isPathPrefix(target, value)),
+    target,
+  ];
+}
+
+function setAtPath(root, target, value) {
+  let current = root;
+  for (const part of target.slice(0, -1)) {
+    if (!isObject(current[part])) current[part] = {};
+    current = current[part];
+  }
+  current[target.at(-1)] = structuredClone(value);
+}
+
+function deleteAtPath(root, target) {
+  const parents = [];
+  let current = root;
+  for (const part of target.slice(0, -1)) {
+    if (!isObject(current[part])) return;
+    parents.push([current, part]);
+    current = current[part];
+  }
+  delete current[target.at(-1)];
+  for (const [parent, part] of parents.reverse()) {
+    if (isObject(parent[part]) && Object.keys(parent[part]).length === 0) {
+      delete parent[part];
+    } else {
+      break;
+    }
+  }
+}
+
+function valueAtPath(root, target) {
+  let current = root;
+  for (const part of target) {
+    if (!isObject(current) || !Object.hasOwn(current, part)) {
+      throw new ConfigError(`No active value exists at ${target.join(".")}`);
+    }
+    current = current[part];
+  }
+  return current;
+}
+
+function hasValueAtPath(root, target) {
+  let current = root;
+  for (const part of target) {
+    if (!isObject(current) || !Object.hasOwn(current, part)) return false;
+    current = current[part];
+  }
+  return true;
+}
+
+function applyDeletions(value, deletions) {
+  const result = structuredClone(value);
+  for (const target of deletions) deleteAtPath(result, target);
+  return result;
+}
+
+function applyLocalLayer(shared, layer) {
+  const result = deepMerge(shared, layer.values);
+  for (const target of layer.replacements) {
+    setAtPath(result, target, valueAtPath(layer.values, target));
+  }
+  return applyDeletions(result, layer.deletions);
+}
+
+function diffOperations(current, baseline, target = []) {
+  if (isObject(current) && isObject(baseline)) {
+    const operations = [];
+    const keys = new Set([...Object.keys(current), ...Object.keys(baseline)]);
+    for (const key of keys) {
+      const child = [...target, key];
+      if (!Object.hasOwn(current, key)) {
+        operations.push({ type: "delete", path: child });
+      } else if (!Object.hasOwn(baseline, key)) {
+        operations.push({ type: "set", path: child, value: current[key] });
+      } else {
+        operations.push(...diffOperations(current[key], baseline[key], child));
+      }
+    }
+    return operations;
+  }
+  return valuesEqual(current, baseline)
+    ? []
+    : [{ type: "set", path: target, value: current }];
+}
+
+function writeLocalLayer(paths, tool, layer) {
+  const document = structuredClone(layer.values);
+  if (layer.deletions.length > 0) {
+    document[LOCAL_METADATA_KEY] = { delete: layer.deletions };
+  }
+  if (layer.replacements.length > 0) {
+    document[LOCAL_METADATA_KEY] ??= {};
+    document[LOCAL_METADATA_KEY].replace = layer.replacements;
+  }
+  if (tool === "claude") {
+    atomicWrite(paths.localClaude, `${JSON.stringify(document, null, 2)}\n`);
+  } else {
+    atomicWrite(paths.localCodex, toml().stringify(document));
+  }
+}
+
+function writeSharedConfig(paths, tool, value) {
+  if (tool === "claude") {
+    atomicWrite(paths.sharedClaude, `${JSON.stringify(value, null, 2)}\n`, 0o644);
+  } else {
+    atomicWrite(paths.sharedCodex, toml().stringify(value), 0o644);
+  }
+}
+
+function sha256(file) {
+  return crypto.createHash("sha256").update(fs.readFileSync(file)).digest("hex");
+}
+
+function atomicWrite(file, content, mode = 0o600) {
+  fs.mkdirSync(path.dirname(file), { recursive: true });
+  const temporary = path.join(
+    path.dirname(file),
+    `.${path.basename(file)}.${process.pid}.${crypto.randomUUID()}`,
+  );
+  let descriptor;
+  try {
+    descriptor = fs.openSync(temporary, "wx", mode);
+    fs.writeFileSync(descriptor, content, "utf8");
+    fs.fsyncSync(descriptor);
+    fs.closeSync(descriptor);
+    descriptor = undefined;
+    fs.chmodSync(temporary, mode);
+    fs.renameSync(temporary, file);
+  } finally {
+    if (descriptor !== undefined) fs.closeSync(descriptor);
+    if (fs.existsSync(temporary)) fs.unlinkSync(temporary);
+  }
+}
+
+function readLockOwner(file) {
+  try {
+    return JSON.parse(fs.readFileSync(file, "utf8"));
+  } catch (error) {
+    if (error?.code === "ENOENT") return undefined;
+    return null;
+  }
+}
+
+function processIsRunning(pid) {
+  if (!Number.isSafeInteger(pid) || pid <= 0) return false;
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch (error) {
+    return error?.code === "EPERM";
+  }
+}
+
+function acquireConfigLock(file) {
+  fs.mkdirSync(path.dirname(file), { recursive: true });
+  const owner = {
+    pid: process.pid,
+    startedAt: new Date().toISOString(),
+    token: crypto.randomUUID(),
+  };
+
+  for (let attempt = 0; attempt < 10; attempt += 1) {
+    const candidate = `${file}.candidate.${owner.token}.${attempt}`;
+    fs.writeFileSync(candidate, `${JSON.stringify(owner)}\n`, {
+      encoding: "utf8",
+      flag: "wx",
+      mode: 0o600,
+    });
+    let acquired = false;
+    try {
+      fs.linkSync(candidate, file);
+      acquired = true;
+    } catch (error) {
+      if (error?.code !== "EEXIST") throw error;
+    } finally {
+      fs.unlinkSync(candidate);
+    }
+    if (acquired) {
+      return () => {
+        const current = readLockOwner(file);
+        if (current?.token === owner.token) fs.unlinkSync(file);
+      };
+    }
+
+    const current = readLockOwner(file);
+    if (current && processIsRunning(current.pid)) {
+      throw new ConfigError(
+        `Another ai configuration command is running (PID ${current.pid}, started ${current.startedAt ?? "at an unknown time"}).`,
+      );
+    }
+    if (current === null) {
+      let age;
+      try {
+        age = Date.now() - fs.statSync(file).mtimeMs;
+      } catch (error) {
+        if (error?.code === "ENOENT") continue;
+        throw error;
+      }
+      if (age < 30_000) {
+        throw new ConfigError(
+          `The configuration lock is not readable yet: ${file}. Try again.`,
+        );
+      }
+    }
+
+    const stale = `${file}.stale.${crypto.randomUUID()}`;
+    try {
+      fs.renameSync(file, stale);
+      fs.unlinkSync(stale);
+    } catch (error) {
+      if (error?.code !== "ENOENT") throw error;
+    }
+  }
+  throw new ConfigError(`Could not acquire the configuration lock: ${file}`);
+}
+
+function withConfigLock(callback) {
+  const release = acquireConfigLock(configPaths().lock);
+  try {
+    return callback();
+  } finally {
+    release();
+  }
+}
+
+function loadState(file) {
+  return fs.existsSync(file) ? loadJson(file) : { outputs: {} };
+}
+
+function assertNoDrift(paths) {
+  const outputs = loadState(paths.state).outputs ?? {};
+  for (const key of ["activeClaude", "activeCodex"]) {
+    const file = paths[key];
+    if (!fs.existsSync(file)) continue;
+    const expected = outputs[file];
+    if (!expected) {
+      throw new ConfigError(
+        `Existing unmanaged configuration: ${file}\n` +
+          "Run `ai capture` once to preserve it as local configuration.",
+      );
+    }
+    if (sha256(file) !== expected) {
+      throw new ConfigError(
+        `Configuration changed after the last render: ${file}\n` +
+          "Run `ai capture` to keep the change, or restore the generated file.",
+      );
+    }
+  }
+}
+
+function renderedValues(paths) {
+  return {
+    claude: applyLocalLayer(
+      loadJson(paths.sharedClaude, { required: true }),
+      loadLocalLayer(paths, "claude"),
+    ),
+    codex: applyLocalLayer(
+      loadToml(paths.sharedCodex, { required: true }),
+      loadLocalLayer(paths, "codex"),
+    ),
+  };
+}
+
+function render({ force = false, quiet = false } = {}) {
+  const paths = configPaths();
+  if (!force) assertNoDrift(paths);
+  const { claude, codex } = renderedValues(paths);
+  const claudeText = `${JSON.stringify(claude, null, 2)}\n`;
+  const codexText = toml().stringify(codex);
+  JSON.parse(claudeText);
+  toml().parse(codexText);
+  atomicWrite(paths.activeClaude, claudeText);
+  atomicWrite(paths.activeCodex, codexText);
+  atomicWrite(paths.snapshotClaude, claudeText);
+  atomicWrite(paths.snapshotCodex, codexText);
+  atomicWrite(
+    paths.state,
+    `${JSON.stringify(
+      {
+        outputs: {
+          [paths.activeClaude]: sha256(paths.activeClaude),
+          [paths.activeCodex]: sha256(paths.activeCodex),
+        },
+      },
+      null,
+      2,
+    )}\n`,
+  );
+  if (!quiet) console.log("Rendered Claude and Codex configuration.");
+}
+
+function adoptTool(paths, tool) {
+  const isClaude = tool === "claude";
+  const activeFile = isClaude ? paths.activeClaude : paths.activeCodex;
+  if (!fs.existsSync(activeFile)) return;
+  const sharedFile = isClaude ? paths.sharedClaude : paths.sharedCodex;
+  const snapshotFile = isClaude ? paths.snapshotClaude : paths.snapshotCodex;
+  const loader = isClaude ? loadJson : loadToml;
+  const shared = loader(sharedFile, { required: true });
+  const layer = loadLocalLayer(paths, tool);
+  const hasSnapshot = fs.existsSync(snapshotFile);
+  const baseline = hasSnapshot
+    ? loader(snapshotFile, { required: true })
+    : applyLocalLayer(shared, layer);
+  const current = loader(activeFile, { required: true });
+  const operations = diffOperations(current, baseline).filter(
+    (operation) => hasSnapshot || operation.type !== "delete",
+  );
+  if (operations.length === 0) return;
+  for (const operation of operations) {
+    if (operation.type === "set") {
+      setAtPath(layer.values, operation.path, operation.value);
+      layer.deletions = removeRelatedDeletions(layer.deletions, operation.path);
+      layer.replacements = removeRelatedDeletions(
+        layer.replacements,
+        operation.path,
+      );
+      if (isObject(operation.value)) {
+        layer.replacements = addReplacement(layer.replacements, operation.path);
+      }
+    } else {
+      deleteAtPath(layer.values, operation.path);
+      layer.deletions = addDeletion(layer.deletions, operation.path);
+      layer.replacements = removeRelatedDeletions(
+        layer.replacements,
+        operation.path,
+      );
+    }
+  }
+  writeLocalLayer(paths, tool, layer);
+}
+
+function adopt({ quiet = false } = {}) {
+  const paths = configPaths();
+  adoptTool(paths, "claude");
+  adoptTool(paths, "codex");
+  render({ force: true, quiet });
+  if (!quiet) {
+    console.log("Preserved the existing device values in the local configuration layer.");
+  }
+}
+
+function parseToolAndPath(args) {
+  const [tool, ...target] = args;
+  if (tool !== "claude" && tool !== "codex") {
+    throw new ConfigError("The configuration tool must be `claude` or `codex`.");
+  }
+  validatePath(target, "command path");
+  return { tool, target };
+}
+
+function editLocalConfig(tool, target, edit) {
+  adopt({ quiet: true });
+  const paths = configPaths();
+  const layer = loadLocalLayer(paths, tool);
+  edit(layer, paths);
+  writeLocalLayer(paths, tool, layer);
+  render();
+}
+
+function pinConfig(args) {
+  const optionIndex = args.findIndex(
+    (value) => value === "--value" || value === "--json-value",
+  );
+  let commandArgs = args;
+  let suppliedValue;
+  if (optionIndex !== -1) {
+    if (optionIndex !== args.length - 2) {
+      throw new ConfigError("Put `--value` or `--json-value` before one final value.");
+    }
+    const option = args[optionIndex];
+    const rawValue = args.at(-1);
+    commandArgs = args.slice(0, optionIndex);
+    suppliedValue = option === "--value" ? rawValue : JSON.parse(rawValue);
+    if (suppliedValue === null) {
+      throw new ConfigError("Use `ai remove` instead of a null value.");
+    }
+  }
+  const { tool, target } = parseToolAndPath(commandArgs);
+  editLocalConfig(tool, target, (layer, paths) => {
+    let value = suppliedValue;
+    if (optionIndex === -1) {
+      const activeFile = tool === "claude" ? paths.activeClaude : paths.activeCodex;
+      const loader = tool === "claude" ? loadJson : loadToml;
+      value = valueAtPath(loader(activeFile, { required: true }), target);
+    }
+    setAtPath(layer.values, target, value);
+    layer.deletions = removeRelatedDeletions(layer.deletions, target);
+    layer.replacements = removeRelatedDeletions(layer.replacements, target);
+    if (isObject(value)) {
+      layer.replacements = addReplacement(layer.replacements, target);
+    }
+  });
+  console.log(`Pinned ${tool}.${target.join(".")}.`);
+}
+
+function resetConfig(args) {
+  const { tool, target } = parseToolAndPath(args);
+  editLocalConfig(tool, target, (layer) => {
+    deleteAtPath(layer.values, target);
+    layer.deletions = removeRelatedDeletions(layer.deletions, target);
+    layer.replacements = removeRelatedDeletions(layer.replacements, target);
+  });
+  console.log(`Reset ${tool}.${target.join(".")} to shared configuration.`);
+}
+
+function removeConfig(args) {
+  const { tool, target } = parseToolAndPath(args);
+  editLocalConfig(tool, target, (layer) => {
+    deleteAtPath(layer.values, target);
+    layer.deletions = addDeletion(layer.deletions, target);
+    layer.replacements = removeRelatedDeletions(layer.replacements, target);
+  });
+  console.log(`Deleted ${tool}.${target.join(".")} from the effective configuration.`);
+}
+
+function hasStrictAncestor(paths, target) {
+  return paths.some(
+    (value) => value.length < target.length && isPathPrefix(value, target),
+  );
+}
+
+function hasLocalIntent(layer, target) {
+  return (
+    hasValueAtPath(layer.values, target) ||
+    layer.deletions.some(
+      (value) => isPathPrefix(value, target) || isPathPrefix(target, value),
+    ) ||
+    layer.replacements.some(
+      (value) => isPathPrefix(value, target) || isPathPrefix(target, value),
+    )
+  );
+}
+
+function shareConfig(args) {
+  const { tool, target } = parseToolAndPath(args);
+  adopt({ quiet: true });
+  const paths = configPaths();
+  const layer = loadLocalLayer(paths, tool);
+  if (!hasLocalIntent(layer, target)) {
+    throw new ConfigError(`No local setting exists at ${tool}.${target.join(".")}.`);
+  }
+  if (
+    hasStrictAncestor(layer.deletions, target) ||
+    hasStrictAncestor(layer.replacements, target)
+  ) {
+    throw new ConfigError(
+      "Share the parent path because it owns the local delete or exact-object intent.",
+    );
+  }
+
+  const isClaude = tool === "claude";
+  const sharedFile = isClaude ? paths.sharedClaude : paths.sharedCodex;
+  const loader = isClaude ? loadJson : loadToml;
+  const shared = loader(sharedFile, { required: true });
+  const effective = applyLocalLayer(shared, layer);
+  if (hasValueAtPath(effective, target)) {
+    setAtPath(shared, target, valueAtPath(effective, target));
+  } else {
+    deleteAtPath(shared, target);
+  }
+
+  deleteAtPath(layer.values, target);
+  layer.deletions = layer.deletions.filter(
+    (value) => !isPathPrefix(target, value),
+  );
+  layer.replacements = layer.replacements.filter(
+    (value) => !isPathPrefix(target, value),
+  );
+  writeSharedConfig(paths, tool, shared);
+  writeLocalLayer(paths, tool, layer);
+  render();
+  console.log(
+    `Shared ${tool}.${target.join(".")} locally. Commit and push the tracked change to synchronize devices.`,
+  );
+}
+
+function configStatus() {
+  const paths = configPaths();
+  const outputs = loadState(paths.state).outputs ?? {};
+  for (const key of ["activeClaude", "activeCodex"]) {
+    const file = paths[key];
+    let condition;
+    if (!fs.existsSync(file)) condition = "missing";
+    else if (outputs[file] === sha256(file)) condition = "current";
+    else if (Object.hasOwn(outputs, file)) condition = "changed";
+    else condition = "unmanaged";
+    console.log(`${file}: ${condition}`);
+  }
+}
+
+function hasAnyLocalIntent(layer) {
+  return (
+    Object.keys(layer.values).length > 0 ||
+    layer.deletions.length > 0 ||
+    layer.replacements.length > 0
+  );
+}
+
+function status() {
+  const paths = configPaths();
+  console.log("Active configuration:");
+  configStatus();
+  console.log("Local intent:");
+  console.log(
+    `${paths.localClaude}: ${hasAnyLocalIntent(loadLocalLayer(paths, "claude")) ? "present" : "none"}`,
+  );
+  console.log(
+    `${paths.localCodex}: ${hasAnyLocalIntent(loadLocalLayer(paths, "codex")) ? "present" : "none"}`,
+  );
+  console.log("Tracked shared changes:");
+  return runGit([
+    "status",
+    "--short",
+    "--",
+    ".config/ai-config/shared/claude.json",
+    ".config/ai-config/shared/codex.toml",
+  ]);
+}
+
+function runGit(args) {
+  const gitDir = process.env.AI_CONFIG_GIT_DIR ?? path.join(os.homedir(), ".ai-config");
+  const workTree = process.env.AI_CONFIG_WORK_TREE ?? os.homedir();
+  const result = spawnSync(
+    "git",
+    [`--git-dir=${gitDir}`, `--work-tree=${workTree}`, ...args],
+    { stdio: "inherit" },
+  );
+  if (result.error) throw result.error;
+  return result.status ?? 1;
+}
+
+function main() {
+  const [command, ...args] = process.argv.slice(2);
+  switch (command) {
+    case "sync": {
+      return withConfigLock(() => {
+        adopt({ quiet: true });
+        const result = runGit(["pull", "--ff-only", ...args]);
+        if (result !== 0) return result;
+        render();
+        return 0;
+      });
+    }
+    case "status":
+      return status();
+    case "apply":
+      return withConfigLock(() => {
+        render();
+        return 0;
+      });
+    case "capture":
+      return withConfigLock(() => {
+        adopt();
+        return 0;
+      });
+    case "pin":
+      return withConfigLock(() => {
+        pinConfig(args);
+        return 0;
+      });
+    case "reset":
+      return withConfigLock(() => {
+        resetConfig(args);
+        return 0;
+      });
+    case "remove":
+      return withConfigLock(() => {
+        removeConfig(args);
+        return 0;
+      });
+    case "share":
+      return withConfigLock(() => {
+        shareConfig(args);
+        return 0;
+      });
+    case "git":
+      return runGit(args);
+    default:
+      throw new ConfigError(
+        "Use `ai sync`, `status`, `apply`, `capture`, `pin`, `reset`, `remove`, `share`, or `git`.",
+      );
+  }
+}
+
+try {
+  process.exitCode = main();
+} catch (error) {
+  console.error(`ai: ${error instanceof Error ? error.message : String(error)}`);
+  process.exitCode = 1;
+}

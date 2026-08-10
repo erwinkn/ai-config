@@ -1,1 +1,7 @@
 __pycache__/
+
+# Effective agent configuration is generated from shared and local layers.
+/.claude/settings.json
+/.codex/config.toml
+/.config/ai-config/local/
+/.config/ai-config/node_modules/

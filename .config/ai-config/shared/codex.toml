@@ -1,0 +1,109 @@
+model = "gpt-5.6-sol"
+model_reasoning_effort = "high"
+personality = "pragmatic"
+model_verbosity = "low"
+model_reasoning_summary = "concise"
+plan_mode_reasoning_effort = "xhigh"
+sandbox_mode = "danger-full-access"
+service_tier = "priority"
+suppress_unstable_features_warning = true
+web_search = "live"
+
+[agents]
+max_concurrent_threads_per_session = 10
+
+[desktop]
+composerEnterBehavior = "cmdIfMultiline"
+followUpQueueMode = "steer"
+git-create-pull-request-as-draft = true
+keepRemoteControlAwakeWhilePluggedIn = true
+notifications-permissions-enabled = true
+notifications-turn-mode = "unfocused"
+preventSleepWhileRunning = true
+reviewDelivery = "detached"
+show-context-window-usage = true
+dock-icon-preference = "app-default"
+conversationDetailMode = "STEPS_PROSE"
+
+[features]
+apps = false
+browser_use = false
+browser_use_external = false
+browser_use_full_cdp_access = false
+collaboration_modes = true
+in_app_browser = false
+multi_agent = true
+personality = true
+plugins = false
+realtime_conversation = true
+shell_snapshot = true
+steer = true
+unified_exec = true
+voice_transcription = true
+memories = true
+prevent_idle_sleep = true
+js_repl = true
+
+[mcp_servers.mobbin]
+url = "https://api.mobbin.com/mcp"
+
+[mcp_servers.excalidraw]
+url = "https://api.excalidraw.com/api/v1/mcp"
+bearer_token_env_var = "EXCALIDRAW_API_KEY"
+
+[mcp_servers.excalidraw.tools.edit_scene_content]
+approval_mode = "approve"
+
+[mcp_servers.excalidraw.tools.get_scene]
+approval_mode = "approve"
+
+[mcp_servers.excalidraw.tools.get_scene_content]
+approval_mode = "approve"
+
+[mcp_servers.excalidraw.tools.read_excalidraw_format]
+approval_mode = "approve"
+
+[mcp_servers.excalidraw.tools.search_scene_content]
+approval_mode = "approve"
+
+[mcp_servers.excalidraw.tools.take_screenshot]
+approval_mode = "approve"
+
+[mcp_servers.cloudflare-api]
+url = "https://mcp.cloudflare.com/mcp"
+
+[plugins."coderabbit@openai-curated"]
+enabled = true
+
+[plugins."documents@openai-primary-runtime"]
+enabled = true
+
+[plugins."github@openai-curated"]
+enabled = true
+
+[plugins."notion@openai-curated"]
+enabled = true
+
+[plugins."presentations@openai-primary-runtime"]
+enabled = true
+
+[plugins."spreadsheets@openai-primary-runtime"]
+enabled = true
+
+[plugins."vercel@openai-curated"]
+enabled = true
+
+[plugins."pdf@openai-primary-runtime"]
+enabled = true
+
+[plugins."computer-use@openai-bundled"]
+enabled = true
+
+[plugins."template-creator@openai-primary-runtime"]
+enabled = true
+
+[plugins."cloudflare@openai-curated-remote"]
+enabled = false
+
+[plugins."visualize@openai-bundled"]
+enabled = true

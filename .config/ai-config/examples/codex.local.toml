@@ -1,0 +1,10 @@
+# Put settings that must stay fixed on this device in this file.
+# A local value remains pinned even when it equals the shared value.
+
+# file_opener = "zed"
+
+# [desktop.open-in-target-preferences]
+# global = "zed"
+
+# [__ai_config]
+# delete = [["mcp_servers", "device_only"]]

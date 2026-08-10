@@ -1,3 +1,4 @@
 - Run skill scripts with `skillx <skill-name> ...`
-- Sync agent config files with the `ai-config` Git repo through the `ai` Git alias
-- Common workflow: changes in ~/Code/ai-config -> `ai commit` -> `ai push` -> `ai pull` to sync to local system
+- Access the bare home Git mirror through `ai git <arguments>`
+- Active Claude and Codex setting changes stay local unless `ai share <tool> <path...>` promotes them
+- Common workflow: `ai share` -> review -> `ai git commit` -> `ai git push` -> `ai sync` on another device

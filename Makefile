@@ -3,7 +3,7 @@ SHELL := /bin/zsh
 .PHONY: sync-home publish
 
 sync-home:
-	@zsh -ic 'ai pull --ff-only'
+	@zsh -ic 'ai sync'
 
 publish:
 	@if [ -z "$(MSG)" ]; then \
@@ -13,5 +13,4 @@ publish:
 	@git add -A
 	@git commit -m "$(MSG)"
 	@git push
-	@zsh -ic 'ai pull --ff-only'
-
+	@zsh -ic 'ai sync'
