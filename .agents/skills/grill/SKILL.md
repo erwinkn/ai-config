@@ -1,18 +1,15 @@
 ---
 name: grill
-description: "Interview the user one decision at a time to stress-test a plan, design, or idea. Use when the user asks to be grilled, wants assumptions challenged, or wants a design clarified; default to discussion-only, and enable documentation mode only when the user explicitly asks to record glossary terms or ADRs."
+description: "Interview the user in multiple rounds to stress-test a plan, design, or idea. Use when the user asks to be grilled, wants assumptions challenged, or wants a design clarified."
 ---
 
 # Grill
 
-Resolve a plan or design through a rigorous, one-question-at-a-time interview.
+Resolve a plan or design through rigorous interview rounds. Ask all independent
+questions on the current frontier through as many native-tool calls as needed.
 Default to discussion-only. Do not edit documentation unless the user explicitly
 enables docs mode.
 
-<!--
-Adapted from mattpocock/skills' grill-me, grilling, grill-with-docs, and
-domain-modeling skills. See LICENSE in this skill folder.
--->
 
 ## Modes
 
@@ -30,10 +27,10 @@ Enable docs mode only when the user explicitly asks for it with wording such as
 Do not infer docs mode from the presence of `CONTEXT.md`, ADRs, or other project
 documentation.
 
-In docs mode, follow the same interview loop and capture confirmed decisions as
-they resolve. If the user enables docs mode partway through, offer to capture
-the important decisions already made. If they disable it, stop future doc
-changes without reverting previously confirmed edits.
+In docs mode, follow the same interview loop and capture qualifying terms and
+decisions as they resolve. If the user enables docs mode partway through, offer
+to capture qualifying terms and decisions already resolved. If they disable it,
+stop future doc changes without reverting previously confirmed edits.
 
 ## Interview loop
 
@@ -41,25 +38,54 @@ changes without reverting previously confirmed edits.
 2. Inspect the environment for facts that can be discovered from code, docs,
    configuration, history, or available tools. Look facts up instead of asking
    the user to supply them.
-3. Find the next unresolved decision whose answer unlocks later questions.
-4. Ask exactly one question. Include a recommended answer and the reason for
-   recommending it.
-5. Wait for the user's answer. Challenge contradictions, vague terms, hidden
-   assumptions, and unresolved edge cases rather than accepting them silently.
-6. Record the resolved decision in the conversation and, in docs mode, update
-   the appropriate document after the user confirms it.
-7. Repeat until the important branches are resolved or the user stops.
+3. Map unresolved decisions as a dependency tree. A decision is ready only when
+   all decisions that it depends on are settled.
+4. Compute the current frontier: all ready decisions that can be answered
+   independently with the facts and prior answers available now.
+5. Work through the whole current frontier with consecutive native question-tool
+   calls. Include as many questions as the tool permits in each call and include
+   a recommended answer and its reason for each.
+6. After each call, process the user's answers, then ask the next batch from the
+   same frontier. Challenge contradictions, vague terms, hidden assumptions, and
+   unresolved edge cases. Remove or revise a pending frontier question when an
+   earlier answer makes it obsolete.
+7. Record resolved decisions in the conversation and, in docs mode, update the
+   appropriate documents as qualifying terms and decisions resolve.
+8. Only after all still-relevant questions on the current frontier are resolved,
+   recompute the tree and next frontier. Repeat until the frontier is empty or
+   the user stops.
 
 The user owns product and design decisions. Never answer those decisions on
 their behalf. When a factual discovery changes the decision space, explain the
 evidence before asking the next question.
 
+## Question delivery
+
+- Use `request_user_input` or the runtime's native equivalent for every
+  interview round. Also use it when a final shared-understanding confirmation
+  question is necessary. Do not put interview questions in ordinary prose.
+- Use the maximum useful number of questions that the tool permits in each call.
+  For Codex `request_user_input`, send one to three questions. If the frontier
+  is larger, continue with another native call after the user answers. Send only
+  one when only one still-relevant frontier decision remains.
+- Give each question two or three mutually exclusive choices. Put the
+  recommended choice first, suffix its label with `(Recommended)`, and state
+  the effect of each choice in one short sentence.
+- Use a short header and a stable snake_case identifier for each question when
+  the tool supports them. Let the tool provide its standard free-form choice;
+  do not add a duplicate catch-all choice.
+- Use ordinary prose only for short evidence or context before the tool call.
+  Do not duplicate the tool questions in that prose.
+- If no native question tool is available, stop the interview and state that
+  `$grill` requires native question input. Do not fall back to prose questions.
+
 ## Question quality
 
-- Ask one question per turn. Never send a questionnaire or bundle unrelated
-  decisions together.
-- Prefer dependency order: settle decisions that constrain several downstream
-  choices first.
+- Batch independent frontier questions, but never include a question whose
+  answer depends on another open question in the same round.
+- Do not postpone a ready independent question only because one tool call is
+  full. Ask it in the next native batch before advancing to the next frontier.
+- Prefer high-leverage questions that constrain several downstream choices.
 - Use concrete scenarios to expose edge cases and ambiguous boundaries.
 - Recommend a choice instead of presenting an unranked menu.
 - Skip questions whose answers are already clear from the request, conversation,
@@ -70,14 +96,26 @@ evidence before asking the next question.
 
 Apply these rules only in docs mode.
 
-Before writing, read the repository instructions and the relevant existing
-`CONTEXT.md`, `CONTEXT-MAP.md`, and ADRs. Preserve surrounding content and
-unrelated changes.
+Before the first interview round, read the repository instructions and the
+relevant existing `CONTEXT.md`, `CONTEXT-MAP.md`, and ADRs. If they do not
+exist, continue without flagging their absence. Preserve surrounding content
+and unrelated changes.
+
+During the interview:
+
+- Challenge a term immediately when it conflicts with the existing glossary.
+- Propose a precise canonical term when the user's language is vague or
+  overloaded.
+- Test domain relationships with concrete edge-case scenarios.
+- Compare factual statements with the code and surface contradictions.
 
 ### Glossary
 
 Use `CONTEXT.md` only for project-specific domain language:
 
+- Create the relevant `CONTEXT.md` lazily when the first term resolves.
+- Update the glossary when each term resolves; do not batch updates until the
+  end of the interview.
 - Define each canonical term in one or two sentences.
 - List misleading synonyms under an `_Avoid_:` line when useful.
 - Keep implementation details, plans, and temporary discussion out of the
@@ -95,7 +133,8 @@ Offer or write an ADR only when the decision is all three:
 
 Keep the ADR concise: state the context, decision, and reason. Match the
 repository's existing location, numbering, and format rather than imposing a
-new convention.
+new convention. Create the relevant ADR directory lazily when the first ADR is
+needed.
 
 ## Completion
 
