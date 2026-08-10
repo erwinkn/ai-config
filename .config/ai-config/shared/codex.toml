@@ -5,7 +5,7 @@ model_verbosity = "low"
 model_reasoning_summary = "concise"
 plan_mode_reasoning_effort = "xhigh"
 sandbox_mode = "danger-full-access"
-service_tier = "priority"
+service_tier = "fast"
 suppress_unstable_features_warning = true
 web_search = "live"
 
@@ -23,26 +23,31 @@ preventSleepWhileRunning = true
 reviewDelivery = "detached"
 show-context-window-usage = true
 dock-icon-preference = "app-default"
-conversationDetailMode = "STEPS_PROSE"
+conversationDetailMode = "STEPS_COMMANDS"
+git-show-sidebar-pr-icons = true
+realtimeVoiceScreenContextEnabled = true
+enabled-reasoning-efforts = [ "low", "medium", "high", "xhigh", "ultra", "max" ]
+computerUseAlwaysHidePictureInPicture = true
+git-pull-request-merge-method = "squash"
+appshotSoundEnabled = false
 
 [features]
-apps = false
+apps = true
 browser_use = false
 browser_use_external = false
 browser_use_full_cdp_access = false
-collaboration_modes = true
 in_app_browser = false
 multi_agent = true
 personality = true
-plugins = false
+plugins = true
 realtime_conversation = true
 shell_snapshot = true
-steer = true
 unified_exec = true
-voice_transcription = true
 memories = true
 prevent_idle_sleep = true
-js_repl = true
+default_mode_request_user_input = true
+computer_use = true
+hooks = true
 
 [mcp_servers.mobbin]
 url = "https://api.mobbin.com/mcp"
@@ -71,6 +76,11 @@ approval_mode = "approve"
 
 [mcp_servers.cloudflare-api]
 url = "https://mcp.cloudflare.com/mcp"
+enabled = true
+
+[mcp_servers.railway]
+command = "railway"
+args = [ "mcp" ]
 
 [plugins."coderabbit@openai-curated"]
 enabled = true
@@ -107,3 +117,46 @@ enabled = false
 
 [plugins."visualize@openai-bundled"]
 enabled = true
+
+[plugins."sites@openai-bundled"]
+enabled = true
+
+[[skills.config]]
+path = "/Users/erwin/.agents/skills/bro/SKILL.md"
+enabled = false
+
+[[skills.config]]
+path = "/Users/erwin/.agents/skills/ast-grep/SKILL.md"
+enabled = false
+
+[[skills.config]]
+path = "/Users/erwin/.agents/skills/ai-agents/SKILL.md"
+enabled = false
+
+[[skills.config]]
+path = "/Users/erwin/.agents/skills/vercel-composition-patterns/SKILL.md"
+enabled = false
+
+[[skills.config]]
+path = "/Users/erwin/.agents/skills/vercel-react-best-practices/SKILL.md"
+enabled = false
+
+[[skills.config]]
+path = "/Users/erwin/.agents/skills/vercel-react-native-skills/SKILL.md"
+enabled = false
+
+[[skills.config]]
+path = "/Users/erwin/.agents/skills/simplify/SKILL.md"
+enabled = false
+
+[[skills.config]]
+path = "/Users/erwin/.agents/skills/humanizer/SKILL.md"
+enabled = false
+
+[[skills.config]]
+path = "/Users/erwin/.agents/skills/karpathy-style/SKILL.md"
+enabled = false
+
+[[skills.config]]
+path = "/Users/erwin/.agents/skills/use-railway/SKILL.md"
+enabled = false
