@@ -428,6 +428,7 @@ function copySkill(source, destination) {
   fs.mkdirSync(path.dirname(destination), { recursive: true });
   fs.cpSync(resolved, destination, {
     recursive: true,
+    verbatimSymlinks: true,
     filter: (file) => file === resolved || !skillEntryIsIgnored(path.basename(file)),
   });
 }

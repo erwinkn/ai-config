@@ -384,6 +384,39 @@ test("a shared target alias renders as an independent active package", (t) => {
   assert.equal(fs.readFileSync(path.join(active, "SKILL.md"), "utf8"), "shared package\n");
 });
 
+test("rendering preserves relative links inside a skill package", (t) => {
+  const fixture = createFixture(t);
+  const shared = path.join(
+    fixture.config,
+    "shared",
+    "skills",
+    "agents",
+    "example",
+  );
+  fs.mkdirSync(shared, { recursive: true });
+  fs.writeFileSync(path.join(shared, "AGENTS.md"), "instructions\n");
+  fs.symlinkSync("AGENTS.md", path.join(shared, "CLAUDE.md"));
+
+  run(fixture, ["apply"]);
+
+  const activeLink = path.join(
+    fixture.home,
+    ".agents",
+    "skills",
+    "example",
+    "CLAUDE.md",
+  );
+  assert.equal(fs.readlinkSync(activeLink), "AGENTS.md");
+
+  run(fixture, ["capture"]);
+  assert.equal(
+    fs.existsSync(
+      path.join(fixture.config, "local", "skills", "agents", "example"),
+    ),
+    false,
+  );
+});
+
 test("sharing one target detaches a shared alias in the other target", (t) => {
   const fixture = createFixture(t);
   writeSkill(fixture.config, "agents", "example", "original\n");
