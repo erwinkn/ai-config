@@ -272,6 +272,36 @@ test("first skill capture keeps new packages local without deleting shared packa
   );
 });
 
+test("system-managed hidden skill directories stay outside configuration management", (t) => {
+  const fixture = createFixture(t);
+  writeSkill(fixture.config, "claude", "shared-skill", "shared\n");
+  const systemSkill = path.join(
+    fixture.home,
+    ".claude",
+    "skills",
+    ".system",
+    "system-skill",
+    "SKILL.md",
+  );
+  fs.mkdirSync(path.dirname(systemSkill), { recursive: true });
+  fs.writeFileSync(systemSkill, "system version one\n");
+
+  run(fixture, ["capture"]);
+
+  assert.equal(fs.readFileSync(systemSkill, "utf8"), "system version one\n");
+  assert.equal(
+    fs.existsSync(
+      path.join(fixture.config, "local", "skills", "claude", ".system"),
+    ),
+    false,
+  );
+
+  fs.writeFileSync(systemSkill, "system version two\n");
+  run(fixture, ["apply"]);
+
+  assert.equal(fs.readFileSync(systemSkill, "utf8"), "system version two\n");
+});
+
 test("a deleted active skill gets a local deletion marker", (t) => {
   const fixture = createFixture(t);
   writeSkill(fixture.config, "agents", "example", "shared\n");

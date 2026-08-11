@@ -324,7 +324,7 @@ function listSkillNames(root) {
   }
   const names = [];
   for (const entry of fs.readdirSync(root, { withFileTypes: true })) {
-    if (entry.name === SKILL_DELETIONS_FILE || skillEntryIsIgnored(entry.name)) continue;
+    if (entry.name.startsWith(".") || skillEntryIsIgnored(entry.name)) continue;
     validateSkillName(entry.name);
     const source = path.join(root, entry.name);
     if (!entry.isDirectory() && !entry.isSymbolicLink()) {
@@ -334,6 +334,18 @@ function listSkillNames(root) {
     names.push(entry.name);
   }
   return names.sort();
+}
+
+function preserveReservedSkillEntries(sourceRoot, destinationRoot) {
+  if (!fs.existsSync(sourceRoot)) return;
+  for (const entry of fs.readdirSync(sourceRoot, { withFileTypes: true })) {
+    if (!entry.name.startsWith(".")) continue;
+    fs.cpSync(
+      path.join(sourceRoot, entry.name),
+      path.join(destinationRoot, entry.name),
+      { recursive: true, verbatimSymlinks: true },
+    );
+  }
 }
 
 function skillDigest(source) {
@@ -685,6 +697,7 @@ function render({ force = false, quiet = false } = {}) {
   for (const target of SKILL_SCOPES) {
     const sources = skillSources(paths, target);
     replaceDirectory(paths.activeSkills[target], (staging) => {
+      preserveReservedSkillEntries(paths.activeSkills[target], staging);
       for (const [name, source] of sources) {
         copySkill(source, path.join(staging, name));
       }
