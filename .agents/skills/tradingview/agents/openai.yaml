@@ -1,4 +1,0 @@
-interface:
-  display_name: "TradingView"
-  short_description: "Manage watchlists and labeled chart levels"
-  default_prompt: "Use $tradingview to manage my watchlist and add labeled price levels safely."
