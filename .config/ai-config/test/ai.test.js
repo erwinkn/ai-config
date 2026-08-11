@@ -602,6 +602,51 @@ test("a lock owned by a dead process is recovered", (t) => {
   assert.equal(fs.existsSync(lock), false);
 });
 
+test("status reports changes to every tracked repository file", (t) => {
+  const fixture = createFixture(t);
+  const gitDir = path.join(fixture.root, "mirror.git");
+  fs.mkdirSync(path.join(fixture.home, ".codex"), { recursive: true });
+  fs.writeFileSync(path.join(fixture.home, ".codex", "AGENTS.md"), "shared\n");
+  const initialized = spawnSync("git", ["init", "--bare", gitDir], {
+    encoding: "utf8",
+  });
+  assert.equal(initialized.status, 0, initialized.stderr);
+  const runMirrorGit = (...args) => {
+    const result = spawnSync(
+      "git",
+      [
+        `--git-dir=${gitDir}`,
+        `--work-tree=${fixture.home}`,
+        ...args,
+      ],
+      { cwd: fixture.home, encoding: "utf8" },
+    );
+    assert.equal(result.status, 0, result.stderr);
+  };
+  runMirrorGit("add", ".codex/AGENTS.md");
+  runMirrorGit(
+    "-c",
+    "user.name=Test",
+    "-c",
+    "user.email=test@example.com",
+    "commit",
+    "-m",
+    "track agent guidance",
+  );
+  fs.writeFileSync(path.join(fixture.home, ".codex", "AGENTS.md"), "local\n");
+  fs.writeFileSync(path.join(fixture.home, "untracked.txt"), "untracked\n");
+  fixture.env.AI_CONFIG_GIT_DIR = gitDir;
+  fixture.env.AI_CONFIG_WORK_TREE = fixture.home;
+
+  const result = run(fixture, ["status"]);
+
+  assert.match(
+    result.stdout,
+    /Tracked repository changes:\n M \.codex\/AGENTS\.md/,
+  );
+  assert.doesNotMatch(result.stdout, /untracked\.txt/);
+});
+
 test("Git path arguments are resolved from the home worktree root", (t) => {
   const fixture = createFixture(t);
   const gitDir = path.join(fixture.root, "mirror.git");

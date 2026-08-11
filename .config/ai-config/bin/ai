@@ -1143,15 +1143,8 @@ function status() {
       `${paths.localSkills[target]}: ${names.length} override(s), ${deletions.length} deletion(s)`,
     );
   }
-  console.log("Tracked shared changes:");
-  return runGit([
-    "status",
-    "--short",
-    "--",
-    ".config/ai-config/shared/claude.json",
-    ".config/ai-config/shared/codex.toml",
-    ".config/ai-config/shared/skills",
-  ]);
+  console.log("Tracked repository changes:");
+  return runGit(["status", "--short", "--untracked-files=no"]);
 }
 
 function runGit(args) {

@@ -171,7 +171,7 @@ ai sync
 it pulls. It then applies the new shared settings and skills and keeps the
 device values and skill packages.
 
-Inspect active files, local intent, and unpublished shared changes:
+Inspect active files, local intent, and all tracked repository changes:
 
 ```sh
 ai status
