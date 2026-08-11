@@ -36,6 +36,7 @@ function createFixture(t) {
       AI_CONFIG_HOME: config,
       AI_CONFIG_STATE_HOME: state,
       AI_CONFIG_ACTIVE_HOME: home,
+      NO_COLOR: "1",
     },
   };
 }
@@ -642,7 +643,7 @@ test("status reports changes to every tracked repository file", (t) => {
 
   assert.match(
     result.stdout,
-    /Tracked repository changes:\n M \.codex\/AGENTS\.md/,
+    /Tracked repository changes\n {2} M \.codex\/AGENTS\.md/,
   );
   assert.doesNotMatch(result.stdout, /untracked\.txt/);
 });

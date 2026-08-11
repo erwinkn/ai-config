@@ -14,6 +14,62 @@ const LOCAL_METADATA_KEY = "__ai_config";
 const SKILL_SCOPES = ["agents", "claude"];
 const SKILL_DELETIONS_FILE = ".deletions.json";
 
+function colorEnabled(stream) {
+  if (process.env.NO_COLOR !== undefined) return false;
+  if (process.env.FORCE_COLOR !== undefined) return true;
+  return stream.isTTY === true;
+}
+
+function styler(stream) {
+  const enabled = colorEnabled(stream);
+  return (code) => (text) => (enabled ? `[${code}m${text}[0m` : text);
+}
+
+const out = styler(process.stdout);
+const bold = out("1");
+const dim = out("2");
+const red = out("31");
+const green = out("32");
+const yellow = out("33");
+const cyan = out("36");
+
+function success(message) {
+  console.log(`${green("✓")} ${message}`);
+}
+
+function displayPath(value) {
+  const home = os.homedir();
+  return value === home || value.startsWith(home + path.sep)
+    ? `~${value.slice(home.length)}`
+    : value;
+}
+
+function formatCondition(condition) {
+  switch (condition) {
+    case "current":
+      return green(condition);
+    case "present":
+      return cyan(condition);
+    case "changed":
+    case "unmanaged":
+      return yellow(condition);
+    case "missing":
+      return red(condition);
+    case "none":
+      return dim(condition);
+    default:
+      return condition;
+  }
+}
+
+function printSection(title, rows) {
+  console.log(bold(title));
+  const width = Math.max(...rows.map(([label]) => label.length));
+  for (const [label, value] of rows) {
+    console.log(`  ${label.padEnd(width + 2)}${value}`);
+  }
+}
+
 let tomlModule;
 
 function toml() {
@@ -730,7 +786,7 @@ function render({ force = false, quiet = false } = {}) {
       2,
     )}\n`,
   );
-  if (!quiet) console.log("Rendered Claude and Codex configuration and skills.");
+  if (!quiet) success("Rendered Claude and Codex configuration and skills.");
 }
 
 function adoptTool(paths, tool) {
@@ -811,7 +867,7 @@ function adopt({ quiet = false } = {}) {
   for (const target of SKILL_SCOPES) adoptSkillTarget(paths, target);
   render({ force: true, quiet });
   if (!quiet) {
-    console.log("Preserved existing device values and skills in the local layers.");
+    success("Preserved existing device values and skills in the local layers.");
   }
 }
 
@@ -866,7 +922,7 @@ function pinConfig(args) {
       layer.replacements = addReplacement(layer.replacements, target);
     }
   });
-  console.log(`Pinned ${tool}.${target.join(".")}.`);
+  success(`Pinned ${tool}.${target.join(".")}.`);
 }
 
 function resetConfig(args) {
@@ -876,7 +932,7 @@ function resetConfig(args) {
     layer.deletions = removeRelatedDeletions(layer.deletions, target);
     layer.replacements = removeRelatedDeletions(layer.replacements, target);
   });
-  console.log(`Reset ${tool}.${target.join(".")} to shared configuration.`);
+  success(`Reset ${tool}.${target.join(".")} to shared configuration.`);
 }
 
 function removeConfig(args) {
@@ -886,7 +942,7 @@ function removeConfig(args) {
     layer.deletions = addDeletion(layer.deletions, target);
     layer.replacements = removeRelatedDeletions(layer.replacements, target);
   });
-  console.log(`Deleted ${tool}.${target.join(".")} from the effective configuration.`);
+  success(`Deleted ${tool}.${target.join(".")} from the effective configuration.`);
 }
 
 function hasStrictAncestor(paths, target) {
@@ -945,7 +1001,7 @@ function shareConfig(args) {
   writeSharedConfig(paths, tool, shared);
   writeLocalLayer(paths, tool, layer);
   render();
-  console.log(
+  success(
     `Shared ${tool}.${target.join(".")} locally. Commit and push the tracked change to synchronize devices.`,
   );
 }
@@ -980,7 +1036,7 @@ function pinSkill(args) {
   replaceSkill(active, path.join(paths.localSkills[target], name));
   removeSkillDeletion(paths, target, name);
   render();
-  console.log(`Pinned ${target} skill ${name} on this device.`);
+  success(`Pinned ${target} skill ${name} on this device.`);
 }
 
 function resetSkill(args) {
@@ -993,7 +1049,7 @@ function resetSkill(args) {
   });
   removeSkillDeletion(paths, target, name);
   render();
-  console.log(`Reset ${target} skill ${name} to the shared layer.`);
+  success(`Reset ${target} skill ${name} to the shared layer.`);
 }
 
 function removeSkill(args) {
@@ -1006,7 +1062,7 @@ function removeSkill(args) {
   if (!deletions.includes(name)) deletions.push(name);
   writeSkillDeletions(localRoot, deletions);
   render();
-  console.log(`Removed ${target} skill ${name} on this device.`);
+  success(`Removed ${target} skill ${name} on this device.`);
 }
 
 function detachSharedSkillAliases(paths, target, name) {
@@ -1061,7 +1117,7 @@ function shareSkill(args) {
     deletions.filter((value) => value !== name),
   );
   render();
-  console.log(
+  success(
     `Shared ${target} skill ${name} locally. Commit and push the tracked change to synchronize devices.`,
   );
 }
@@ -1084,23 +1140,22 @@ function skillsCommand(args) {
   }
 }
 
-function configStatus() {
-  const paths = configPaths();
+function configStatusRows(paths) {
   const outputs = loadState(paths.state).outputs ?? {};
-  for (const key of ["activeClaude", "activeCodex"]) {
+  return ["activeClaude", "activeCodex"].map((key) => {
     const file = paths[key];
     let condition;
     if (!fs.existsSync(file)) condition = "missing";
     else if (outputs[file] === sha256(file)) condition = "current";
     else if (Object.hasOwn(outputs, file)) condition = "changed";
     else condition = "unmanaged";
-    console.log(`${file}: ${condition}`);
-  }
+    return [displayPath(file), formatCondition(condition)];
+  });
 }
 
-function skillsStatus(paths) {
+function skillsStatusRows(paths) {
   const state = loadState(paths.state);
-  for (const target of SKILL_SCOPES) {
+  return SKILL_SCOPES.map((target) => {
     const current = skillInventory(paths.activeSkills[target]);
     const expected = state.skills?.[target];
     let condition;
@@ -1111,8 +1166,8 @@ function skillsStatus(paths) {
     } else {
       condition = "changed";
     }
-    console.log(`${paths.activeSkills[target]}: ${condition}`);
-  }
+    return [displayPath(paths.activeSkills[target]), formatCondition(condition)];
+  });
 }
 
 function hasAnyLocalIntent(layer) {
@@ -1123,40 +1178,81 @@ function hasAnyLocalIntent(layer) {
   );
 }
 
-function status() {
-  const paths = configPaths();
-  console.log("Active configuration:");
-  configStatus();
-  console.log("Active skills:");
-  skillsStatus(paths);
-  console.log("Local intent:");
-  console.log(
-    `${paths.localClaude}: ${hasAnyLocalIntent(loadLocalLayer(paths, "claude")) ? "present" : "none"}`,
-  );
-  console.log(
-    `${paths.localCodex}: ${hasAnyLocalIntent(loadLocalLayer(paths, "codex")) ? "present" : "none"}`,
-  );
-  for (const target of SKILL_SCOPES) {
-    const names = listSkillNames(paths.localSkills[target]);
-    const deletions = loadSkillDeletions(paths.localSkills[target]);
-    console.log(
-      `${paths.localSkills[target]}: ${names.length} override(s), ${deletions.length} deletion(s)`,
-    );
+function formatSkillIntent(names, deletions) {
+  if (names.length === 0 && deletions.length === 0) return dim("none");
+  const parts = [];
+  if (names.length > 0) {
+    parts.push(`${names.length} override${names.length === 1 ? "" : "s"}`);
   }
-  console.log("Tracked repository changes:");
-  return runGit(["status", "--short", "--untracked-files=no"]);
+  if (deletions.length > 0) {
+    parts.push(`${deletions.length} deletion${deletions.length === 1 ? "" : "s"}`);
+  }
+  return cyan(parts.join(", "));
 }
 
-function runGit(args) {
+function localIntentRows(paths) {
+  const rows = [
+    [
+      displayPath(paths.localClaude),
+      formatCondition(
+        hasAnyLocalIntent(loadLocalLayer(paths, "claude")) ? "present" : "none",
+      ),
+    ],
+    [
+      displayPath(paths.localCodex),
+      formatCondition(
+        hasAnyLocalIntent(loadLocalLayer(paths, "codex")) ? "present" : "none",
+      ),
+    ],
+  ];
+  for (const target of SKILL_SCOPES) {
+    rows.push([
+      displayPath(paths.localSkills[target]),
+      formatSkillIntent(
+        listSkillNames(paths.localSkills[target]),
+        loadSkillDeletions(paths.localSkills[target]),
+      ),
+    ]);
+  }
+  return rows;
+}
+
+function status() {
+  const paths = configPaths();
+  printSection("Active configuration", configStatusRows(paths));
+  console.log();
+  printSection("Active skills", skillsStatusRows(paths));
+  console.log();
+  printSection("Local intent", localIntentRows(paths));
+  console.log();
+  console.log(bold("Tracked repository changes"));
+  const result = runGit(["status", "--short", "--untracked-files=no"], {
+    capture: true,
+  });
+  const changes = result.stdout.replace(/\n$/, "");
+  if (changes === "") {
+    console.log(`  ${green("clean")}`);
+  } else {
+    for (const line of changes.split("\n")) console.log(`  ${line}`);
+  }
+  return result.status ?? 1;
+}
+
+function runGit(args, { capture = false } = {}) {
   const gitDir = process.env.AI_CONFIG_GIT_DIR ?? path.join(os.homedir(), ".ai-config");
   const workTree = process.env.AI_CONFIG_WORK_TREE ?? os.homedir();
+  const colorArgs =
+    capture && colorEnabled(process.stdout) ? ["-c", "color.status=always"] : [];
   const result = spawnSync(
     "git",
-    [`--git-dir=${gitDir}`, `--work-tree=${workTree}`, ...args],
-    { cwd: workTree, stdio: "inherit" },
+    [`--git-dir=${gitDir}`, `--work-tree=${workTree}`, ...colorArgs, ...args],
+    capture
+      ? { cwd: workTree, encoding: "utf8" }
+      : { cwd: workTree, stdio: "inherit" },
   );
   if (result.error) throw result.error;
-  return result.status ?? 1;
+  if (capture && result.stderr) process.stderr.write(result.stderr);
+  return capture ? result : result.status ?? 1;
 }
 
 function main() {
@@ -1220,6 +1316,9 @@ function main() {
 try {
   process.exitCode = main();
 } catch (error) {
-  console.error(`ai: ${error instanceof Error ? error.message : String(error)}`);
+  const errorRed = styler(process.stderr)("31");
+  console.error(
+    `${errorRed("ai:")} ${error instanceof Error ? error.message : String(error)}`,
+  );
   process.exitCode = 1;
 }
