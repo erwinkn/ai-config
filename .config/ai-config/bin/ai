@@ -11,6 +11,8 @@ const { spawnSync } = require("node:child_process");
 class ConfigError extends Error {}
 
 const LOCAL_METADATA_KEY = "__ai_config";
+const SKILL_SCOPES = ["agents", "claude"];
+const SKILL_DELETIONS_FILE = ".deletions.json";
 
 let tomlModule;
 
@@ -44,6 +46,22 @@ function configPaths() {
     activeCodex: path.join(activeRoot, ".codex", "config.toml"),
     snapshotClaude: path.join(stateRoot, "last-rendered", "claude.json"),
     snapshotCodex: path.join(stateRoot, "last-rendered", "codex.toml"),
+    sharedSkills: {
+      agents: path.join(configRoot, "shared", "skills", "agents"),
+      claude: path.join(configRoot, "shared", "skills", "claude"),
+    },
+    localSkills: {
+      agents: path.join(configRoot, "local", "skills", "agents"),
+      claude: path.join(configRoot, "local", "skills", "claude"),
+    },
+    activeSkills: {
+      agents: path.join(activeRoot, ".agents", "skills"),
+      claude: path.join(activeRoot, ".claude", "skills"),
+    },
+    snapshotSkills: {
+      agents: path.join(stateRoot, "last-rendered", "skills", "agents"),
+      claude: path.join(stateRoot, "last-rendered", "skills", "claude"),
+    },
     state: path.join(stateRoot, "render-state.json"),
     lock: path.join(stateRoot, "config.lock"),
   };
@@ -276,6 +294,210 @@ function sha256(file) {
   return crypto.createHash("sha256").update(fs.readFileSync(file)).digest("hex");
 }
 
+function validateSkillName(name) {
+  if (
+    typeof name !== "string" ||
+    name.length === 0 ||
+    name.startsWith(".") ||
+    name.includes("/") ||
+    name.includes("\\") ||
+    name === "." ||
+    name === ".."
+  ) {
+    throw new ConfigError(`Invalid skill name: ${name}`);
+  }
+  return name;
+}
+
+function skillRoot(source) {
+  const resolved = fs.realpathSync(source);
+  if (!fs.statSync(resolved).isDirectory()) {
+    throw new ConfigError(`Expected a skill directory: ${source}`);
+  }
+  return resolved;
+}
+
+function listSkillNames(root) {
+  if (!fs.existsSync(root)) return [];
+  if (!fs.statSync(root).isDirectory()) {
+    throw new ConfigError(`Expected a skills directory: ${root}`);
+  }
+  const names = [];
+  for (const entry of fs.readdirSync(root, { withFileTypes: true })) {
+    if (entry.name === SKILL_DELETIONS_FILE || skillEntryIsIgnored(entry.name)) continue;
+    validateSkillName(entry.name);
+    const source = path.join(root, entry.name);
+    if (!entry.isDirectory() && !entry.isSymbolicLink()) {
+      throw new ConfigError(`Expected a skill directory: ${source}`);
+    }
+    skillRoot(source);
+    names.push(entry.name);
+  }
+  return names.sort();
+}
+
+function skillDigest(source) {
+  const hash = crypto.createHash("sha256");
+  const root = skillRoot(source);
+  function visit(directory, prefix = "") {
+    const entries = fs
+      .readdirSync(directory, { withFileTypes: true })
+      .filter((entry) => !skillEntryIsIgnored(entry.name))
+      .sort((left, right) => left.name.localeCompare(right.name));
+    if (entries.length === 0) hash.update(`directory\0${prefix}\0`);
+    for (const entry of entries) {
+      const relative = prefix ? `${prefix}/${entry.name}` : entry.name;
+      const file = path.join(directory, entry.name);
+      const details = fs.lstatSync(file);
+      if (entry.isDirectory()) {
+        hash.update(`directory\0${relative}\0${details.mode & 0o777}\0`);
+        visit(file, relative);
+      } else if (entry.isFile()) {
+        hash.update(`file\0${relative}\0${details.mode & 0o777}\0`);
+        hash.update(fs.readFileSync(file));
+        hash.update("\0");
+      } else if (entry.isSymbolicLink()) {
+        hash.update(`link\0${relative}\0${fs.readlinkSync(file)}\0`);
+      } else {
+        throw new ConfigError(`Unsupported file in skill ${source}: ${relative}`);
+      }
+    }
+  }
+  visit(root);
+  return hash.digest("hex");
+}
+
+function skillEntryIsIgnored(name) {
+  return name === ".DS_Store" || name === "__pycache__" || name.endsWith(".pyc");
+}
+
+function skillInventory(root) {
+  return Object.fromEntries(
+    listSkillNames(root).map((name) => [name, skillDigest(path.join(root, name))]),
+  );
+}
+
+function skillDeletionsFile(localRoot) {
+  return path.join(localRoot, SKILL_DELETIONS_FILE);
+}
+
+function loadSkillDeletions(localRoot) {
+  const file = skillDeletionsFile(localRoot);
+  if (!fs.existsSync(file)) return [];
+  const value = JSON.parse(fs.readFileSync(file, "utf8"));
+  if (!Array.isArray(value) || value.some((name) => typeof name !== "string")) {
+    throw new ConfigError(`Expected an array of skill names in ${file}`);
+  }
+  return [...new Set(value.map(validateSkillName))].sort();
+}
+
+function writeSkillDeletions(localRoot, deletions) {
+  const file = skillDeletionsFile(localRoot);
+  const normalized = [...new Set(deletions.map(validateSkillName))].sort();
+  if (normalized.length === 0) {
+    fs.rmSync(file, { force: true });
+    return;
+  }
+  atomicWrite(file, `${JSON.stringify(normalized, null, 2)}\n`);
+}
+
+function skillSources(paths, target) {
+  const sources = new Map();
+  for (const name of listSkillNames(paths.sharedSkills[target])) {
+    sources.set(name, path.join(paths.sharedSkills[target], name));
+  }
+  for (const name of listSkillNames(paths.localSkills[target])) {
+    sources.set(name, path.join(paths.localSkills[target], name));
+  }
+  for (const name of loadSkillDeletions(paths.localSkills[target])) {
+    sources.delete(name);
+  }
+  return sources;
+}
+
+function effectiveSkillInventory(paths, target) {
+  return Object.fromEntries(
+    [...skillSources(paths, target)]
+      .sort(([left], [right]) => left.localeCompare(right))
+      .map(([name, source]) => [name, skillDigest(source)]),
+  );
+}
+
+function copySkill(source, destination) {
+  const resolved = skillRoot(source);
+  fs.mkdirSync(path.dirname(destination), { recursive: true });
+  fs.cpSync(resolved, destination, {
+    recursive: true,
+    filter: (file) => file === resolved || !skillEntryIsIgnored(path.basename(file)),
+  });
+}
+
+function pathExists(file) {
+  try {
+    fs.lstatSync(file);
+    return true;
+  } catch (error) {
+    if (error?.code === "ENOENT") return false;
+    throw error;
+  }
+}
+
+function replaceDirectory(destination, populate) {
+  fs.mkdirSync(path.dirname(destination), { recursive: true });
+  const token = [process.pid, crypto.randomUUID()].join(".");
+  const staging = `${destination}.staging.${token}`;
+  const previous = `${destination}.previous.${token}`;
+  fs.mkdirSync(staging);
+  let movedPrevious = false;
+  try {
+    populate(staging);
+    if (pathExists(destination)) {
+      fs.renameSync(destination, previous);
+      movedPrevious = true;
+    }
+    fs.renameSync(staging, destination);
+    if (movedPrevious) fs.rmSync(previous, { recursive: true, force: true });
+  } catch (error) {
+    fs.rmSync(staging, { recursive: true, force: true });
+    if (movedPrevious && !fs.existsSync(destination)) {
+      fs.renameSync(previous, destination);
+    }
+    throw error;
+  }
+}
+
+function replaceSkill(source, destination) {
+  const parent = path.dirname(destination);
+  fs.mkdirSync(parent, { recursive: true });
+  const staging = path.join(
+    parent,
+    "." + path.basename(destination) + ".staging." + crypto.randomUUID(),
+  );
+  try {
+    copySkill(source, staging);
+    fs.rmSync(destination, { recursive: true, force: true });
+    fs.renameSync(staging, destination);
+  } finally {
+    fs.rmSync(staging, { recursive: true, force: true });
+  }
+}
+
+function replaceSkillAlias(source, destination) {
+  const parent = path.dirname(destination);
+  fs.mkdirSync(parent, { recursive: true });
+  const staging = path.join(
+    parent,
+    "." + path.basename(destination) + ".staging." + crypto.randomUUID(),
+  );
+  try {
+    fs.symlinkSync(path.relative(parent, source), staging);
+    fs.rmSync(destination, { recursive: true, force: true });
+    fs.renameSync(staging, destination);
+  } finally {
+    fs.rmSync(staging, { force: true });
+  }
+}
+
 function atomicWrite(file, content, mode = 0o600) {
   fs.mkdirSync(path.dirname(file), { recursive: true });
   const temporary = path.join(
@@ -393,7 +615,8 @@ function loadState(file) {
 }
 
 function assertNoDrift(paths) {
-  const outputs = loadState(paths.state).outputs ?? {};
+  const state = loadState(paths.state);
+  const outputs = state.outputs ?? {};
   for (const key of ["activeClaude", "activeCodex"]) {
     const file = paths[key];
     if (!fs.existsSync(file)) continue;
@@ -408,6 +631,25 @@ function assertNoDrift(paths) {
       throw new ConfigError(
         `Configuration changed after the last render: ${file}\n` +
           "Run `ai capture` to keep the change, or restore the generated file.",
+      );
+    }
+  }
+  for (const target of SKILL_SCOPES) {
+    const current = skillInventory(paths.activeSkills[target]);
+    const expected = state.skills?.[target];
+    if (expected === undefined) {
+      if (Object.keys(current).length > 0) {
+        throw new ConfigError(
+          `Existing unmanaged skills: ${paths.activeSkills[target]}\n` +
+            "Run `ai capture` once to preserve them as local skills.",
+        );
+      }
+      continue;
+    }
+    if (JSON.stringify(current) !== JSON.stringify(expected)) {
+      throw new ConfigError(
+        `Skills changed after the last render: ${paths.activeSkills[target]}\n` +
+          "Run `ai capture` to keep the changes, or restore the generated skills.",
       );
     }
   }
@@ -430,6 +672,7 @@ function render({ force = false, quiet = false } = {}) {
   const paths = configPaths();
   if (!force) assertNoDrift(paths);
   const { claude, codex } = renderedValues(paths);
+  for (const target of SKILL_SCOPES) effectiveSkillInventory(paths, target);
   const claudeText = `${JSON.stringify(claude, null, 2)}\n`;
   const codexText = toml().stringify(codex);
   JSON.parse(claudeText);
@@ -438,6 +681,22 @@ function render({ force = false, quiet = false } = {}) {
   atomicWrite(paths.activeCodex, codexText);
   atomicWrite(paths.snapshotClaude, claudeText);
   atomicWrite(paths.snapshotCodex, codexText);
+  for (const target of SKILL_SCOPES) {
+    const sources = skillSources(paths, target);
+    replaceDirectory(paths.activeSkills[target], (staging) => {
+      for (const [name, source] of sources) {
+        copySkill(source, path.join(staging, name));
+      }
+    });
+    replaceDirectory(paths.snapshotSkills[target], (staging) => {
+      for (const name of listSkillNames(paths.activeSkills[target])) {
+        copySkill(
+          path.join(paths.activeSkills[target], name),
+          path.join(staging, name),
+        );
+      }
+    });
+  }
   atomicWrite(
     paths.state,
     `${JSON.stringify(
@@ -446,12 +705,18 @@ function render({ force = false, quiet = false } = {}) {
           [paths.activeClaude]: sha256(paths.activeClaude),
           [paths.activeCodex]: sha256(paths.activeCodex),
         },
+        skills: Object.fromEntries(
+          SKILL_SCOPES.map((target) => [
+            target,
+            skillInventory(paths.activeSkills[target]),
+          ]),
+        ),
       },
       null,
       2,
     )}\n`,
   );
-  if (!quiet) console.log("Rendered Claude and Codex configuration.");
+  if (!quiet) console.log("Rendered Claude and Codex configuration and skills.");
 }
 
 function adoptTool(paths, tool) {
@@ -495,13 +760,44 @@ function adoptTool(paths, tool) {
   writeLocalLayer(paths, tool, layer);
 }
 
+function adoptSkillTarget(paths, target) {
+  const activeRoot = paths.activeSkills[target];
+  const localRoot = paths.localSkills[target];
+  const snapshotRoot = paths.snapshotSkills[target];
+  const current = skillInventory(activeRoot);
+  const hasSnapshot = fs.existsSync(snapshotRoot);
+  const baseline = hasSnapshot
+    ? skillInventory(snapshotRoot)
+    : effectiveSkillInventory(paths, target);
+  let deletions = loadSkillDeletions(localRoot);
+  const names = [...new Set([...Object.keys(current), ...Object.keys(baseline)])].sort();
+  for (const name of names) {
+    if (current[name] !== undefined && current[name] !== baseline[name]) {
+      replaceSkill(
+        path.join(activeRoot, name),
+        path.join(localRoot, name),
+      );
+      deletions = deletions.filter((value) => value !== name);
+    } else if (
+      hasSnapshot &&
+      current[name] === undefined &&
+      baseline[name] !== undefined
+    ) {
+      fs.rmSync(path.join(localRoot, name), { recursive: true, force: true });
+      if (!deletions.includes(name)) deletions.push(name);
+    }
+  }
+  writeSkillDeletions(localRoot, deletions);
+}
+
 function adopt({ quiet = false } = {}) {
   const paths = configPaths();
   adoptTool(paths, "claude");
   adoptTool(paths, "codex");
+  for (const target of SKILL_SCOPES) adoptSkillTarget(paths, target);
   render({ force: true, quiet });
   if (!quiet) {
-    console.log("Preserved the existing device values in the local configuration layer.");
+    console.log("Preserved existing device values and skills in the local layers.");
   }
 }
 
@@ -640,6 +936,140 @@ function shareConfig(args) {
   );
 }
 
+function parseSkillTarget(args) {
+  const [target, rawName, ...extra] = args;
+  if (!SKILL_SCOPES.includes(target)) {
+    throw new ConfigError("The skill target must be `agents` or `claude`.");
+  }
+  if (rawName === undefined || extra.length > 0) {
+    throw new ConfigError("Use one skill name after the skill target.");
+  }
+  return { target, name: validateSkillName(rawName) };
+}
+
+function removeSkillDeletion(paths, target, name) {
+  const localRoot = paths.localSkills[target];
+  writeSkillDeletions(
+    localRoot,
+    loadSkillDeletions(localRoot).filter((value) => value !== name),
+  );
+}
+
+function pinSkill(args) {
+  const { target, name } = parseSkillTarget(args);
+  adopt({ quiet: true });
+  const paths = configPaths();
+  const active = path.join(paths.activeSkills[target], name);
+  if (!fs.existsSync(active)) {
+    throw new ConfigError(`No active ${target} skill exists named ${name}.`);
+  }
+  replaceSkill(active, path.join(paths.localSkills[target], name));
+  removeSkillDeletion(paths, target, name);
+  render();
+  console.log(`Pinned ${target} skill ${name} on this device.`);
+}
+
+function resetSkill(args) {
+  const { target, name } = parseSkillTarget(args);
+  adopt({ quiet: true });
+  const paths = configPaths();
+  fs.rmSync(path.join(paths.localSkills[target], name), {
+    recursive: true,
+    force: true,
+  });
+  removeSkillDeletion(paths, target, name);
+  render();
+  console.log(`Reset ${target} skill ${name} to the shared layer.`);
+}
+
+function removeSkill(args) {
+  const { target, name } = parseSkillTarget(args);
+  adopt({ quiet: true });
+  const paths = configPaths();
+  const localRoot = paths.localSkills[target];
+  fs.rmSync(path.join(localRoot, name), { recursive: true, force: true });
+  const deletions = loadSkillDeletions(localRoot);
+  if (!deletions.includes(name)) deletions.push(name);
+  writeSkillDeletions(localRoot, deletions);
+  render();
+  console.log(`Removed ${target} skill ${name} on this device.`);
+}
+
+function detachSharedSkillAliases(paths, target, name) {
+  const source = path.join(paths.sharedSkills[target], name);
+  if (!pathExists(source)) return;
+  const resolvedSource = fs.realpathSync(source);
+  for (const otherTarget of SKILL_SCOPES) {
+    if (otherTarget === target) continue;
+    const candidate = path.join(paths.sharedSkills[otherTarget], name);
+    if (
+      !pathExists(candidate) ||
+      !fs.lstatSync(candidate).isSymbolicLink()
+    ) {
+      continue;
+    }
+    if (fs.realpathSync(candidate) === resolvedSource) {
+      replaceSkill(candidate, candidate);
+    }
+  }
+}
+
+function shareSkill(args) {
+  const { target, name } = parseSkillTarget(args);
+  adopt({ quiet: true });
+  const paths = configPaths();
+  const localRoot = paths.localSkills[target];
+  const local = path.join(localRoot, name);
+  const shared = path.join(paths.sharedSkills[target], name);
+  const deletions = loadSkillDeletions(localRoot);
+  detachSharedSkillAliases(paths, target, name);
+  if (deletions.includes(name)) {
+    fs.rmSync(shared, { recursive: true, force: true });
+  } else if (fs.existsSync(local)) {
+    const matchingShared = SKILL_SCOPES
+      .filter((value) => value !== target)
+      .map((value) => path.join(paths.sharedSkills[value], name))
+      .find(
+        (candidate) =>
+          pathExists(candidate) && skillDigest(candidate) === skillDigest(local),
+      );
+    if (matchingShared === undefined) {
+      replaceSkill(local, shared);
+    } else {
+      replaceSkillAlias(matchingShared, shared);
+    }
+  } else {
+    throw new ConfigError(`No local ${target} skill exists named ${name}.`);
+  }
+  fs.rmSync(local, { recursive: true, force: true });
+  writeSkillDeletions(
+    localRoot,
+    deletions.filter((value) => value !== name),
+  );
+  render();
+  console.log(
+    `Shared ${target} skill ${name} locally. Commit and push the tracked change to synchronize devices.`,
+  );
+}
+
+function skillsCommand(args) {
+  const [command, ...commandArgs] = args;
+  switch (command) {
+    case "pin":
+      return pinSkill(commandArgs);
+    case "reset":
+      return resetSkill(commandArgs);
+    case "remove":
+      return removeSkill(commandArgs);
+    case "share":
+      return shareSkill(commandArgs);
+    default:
+      throw new ConfigError(
+        "Use `ai skills pin`, `reset`, `remove`, or `share`.",
+      );
+  }
+}
+
 function configStatus() {
   const paths = configPaths();
   const outputs = loadState(paths.state).outputs ?? {};
@@ -651,6 +1081,23 @@ function configStatus() {
     else if (Object.hasOwn(outputs, file)) condition = "changed";
     else condition = "unmanaged";
     console.log(`${file}: ${condition}`);
+  }
+}
+
+function skillsStatus(paths) {
+  const state = loadState(paths.state);
+  for (const target of SKILL_SCOPES) {
+    const current = skillInventory(paths.activeSkills[target]);
+    const expected = state.skills?.[target];
+    let condition;
+    if (expected === undefined) {
+      condition = Object.keys(current).length === 0 ? "missing" : "unmanaged";
+    } else if (JSON.stringify(current) === JSON.stringify(expected)) {
+      condition = "current";
+    } else {
+      condition = "changed";
+    }
+    console.log(`${paths.activeSkills[target]}: ${condition}`);
   }
 }
 
@@ -666,6 +1113,8 @@ function status() {
   const paths = configPaths();
   console.log("Active configuration:");
   configStatus();
+  console.log("Active skills:");
+  skillsStatus(paths);
   console.log("Local intent:");
   console.log(
     `${paths.localClaude}: ${hasAnyLocalIntent(loadLocalLayer(paths, "claude")) ? "present" : "none"}`,
@@ -673,6 +1122,13 @@ function status() {
   console.log(
     `${paths.localCodex}: ${hasAnyLocalIntent(loadLocalLayer(paths, "codex")) ? "present" : "none"}`,
   );
+  for (const target of SKILL_SCOPES) {
+    const names = listSkillNames(paths.localSkills[target]);
+    const deletions = loadSkillDeletions(paths.localSkills[target]);
+    console.log(
+      `${paths.localSkills[target]}: ${names.length} override(s), ${deletions.length} deletion(s)`,
+    );
+  }
   console.log("Tracked shared changes:");
   return runGit([
     "status",
@@ -680,6 +1136,7 @@ function status() {
     "--",
     ".config/ai-config/shared/claude.json",
     ".config/ai-config/shared/codex.toml",
+    ".config/ai-config/shared/skills",
   ]);
 }
 
@@ -739,11 +1196,16 @@ function main() {
         shareConfig(args);
         return 0;
       });
+    case "skills":
+      return withConfigLock(() => {
+        skillsCommand(args);
+        return 0;
+      });
     case "git":
       return runGit(args);
     default:
       throw new ConfigError(
-        "Use `ai sync`, `status`, `apply`, `capture`, `pin`, `reset`, `remove`, `share`, or `git`.",
+        "Use `ai sync`, `status`, `apply`, `capture`, `pin`, `reset`, `remove`, `share`, `skills`, or `git`.",
       );
   }
 }

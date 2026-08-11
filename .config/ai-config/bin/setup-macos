@@ -29,10 +29,16 @@ cleanup() {
 
 restore_active() {
     local relative
-    for relative in .claude/settings.json .codex/config.toml; do
-        if [[ -e "$backup_root/$relative" ]]; then
+    for relative in \
+        .claude/settings.json \
+        .codex/config.toml \
+        .agents/.skill-lock.json \
+        .agents/skills \
+        .claude/skills; do
+        if [[ -e "$backup_root/$relative" || -L "$backup_root/$relative" ]]; then
             mkdir -p "$(dirname "$HOME/$relative")"
-            cp -p "$backup_root/$relative" "$HOME/$relative"
+            rm -rf "$HOME/$relative"
+            cp -pR "$backup_root/$relative" "$HOME/$relative"
         fi
     done
 }
@@ -93,6 +99,10 @@ capture_active_configuration() {
         "$captured_root/shared/claude.json"
     cp "$source_root/.config/ai-config/shared/codex.toml" \
         "$captured_root/shared/codex.toml"
+    if [[ -d "$source_root/.config/ai-config/shared/skills" ]]; then
+        cp -pR "$source_root/.config/ai-config/shared/skills" \
+            "$captured_root/shared/skills"
+    fi
     local found=0
     if [[ -e "$HOME/.claude/settings.json" ]]; then
         backup_file "$HOME/.claude/settings.json" ".claude/settings.json"
@@ -108,12 +118,44 @@ capture_active_configuration() {
             "$captured_active_root/.codex/config.toml"
         found=1
     fi
+    if [[ -e "$HOME/.agents/.skill-lock.json" ]]; then
+        backup_file "$HOME/.agents/.skill-lock.json" ".agents/.skill-lock.json"
+        mkdir -p "$captured_active_root/.agents"
+        cp "$HOME/.agents/.skill-lock.json" \
+            "$captured_active_root/.agents/.skill-lock.json"
+    fi
+    local relative
+    for relative in .agents/skills .claude/skills; do
+        if [[ ! -e "$HOME/$relative" && ! -L "$HOME/$relative" ]]; then
+            continue
+        fi
+        backup_file "$HOME/$relative" "$relative"
+        mkdir -p "$(dirname "$captured_active_root/$relative")"
+        cp -pR "$HOME/$relative" "$captured_active_root/$relative"
+        found=1
+    done
     if [[ $found -eq 1 ]]; then
         AI_CONFIG_HOME="$captured_root" \
         AI_CONFIG_ACTIVE_HOME="$captured_active_root" \
         AI_CONFIG_STATE_HOME="$temporary_root/state" \
             "$source_root/.config/ai-config/bin/ai" capture >/dev/null
     fi
+}
+
+restore_captured_skill_data() {
+    local relative
+    for relative in \
+        .agents/.skill-lock.json \
+        .agents/skills \
+        .claude/skills; do
+        if [[ ! -e "$captured_active_root/$relative" \
+            && ! -L "$captured_active_root/$relative" ]]; then
+            continue
+        fi
+        mkdir -p "$(dirname "$HOME/$relative")"
+        rm -rf "$HOME/$relative"
+        cp -pR "$captured_active_root/$relative" "$HOME/$relative"
+    done
 }
 
 backup_checkout_conflicts() {
@@ -180,12 +222,19 @@ else
         exit 1
     fi
     restore_active_on_error=1
-    for relative in .claude/settings.json .codex/config.toml; do
+    for relative in \
+        .claude/settings.json \
+        .codex/config.toml \
+        .agents/.skill-lock.json; do
         if home_git ls-files --error-unmatch "$relative" \
             >/dev/null 2>&1; then
             home_git checkout -- "$relative"
         fi
     done
+    tracked_skills=$(home_git ls-files -- .agents/skills .claude/skills)
+    if [[ -n "$tracked_skills" ]]; then
+        home_git checkout -- .agents/skills .claude/skills
+    fi
     home_git pull --ff-only
 fi
 
@@ -198,6 +247,17 @@ for name in claude.json codex.toml; do
         chmod 600 "$HOME/.config/ai-config/local/$name"
     fi
 done
+
+if [[ -d "$captured_root/local/skills" ]]; then
+    backup_file "$HOME/.config/ai-config/local/skills" \
+        ".config/ai-config/local/skills"
+    rm -rf "$HOME/.config/ai-config/local/skills"
+    mkdir -p "$HOME/.config/ai-config/local"
+    cp -pR "$captured_root/local/skills" \
+        "$HOME/.config/ai-config/local/skills"
+fi
+
+restore_captured_skill_data
 
 install_wrapper ai
 install_path_entry

@@ -67,6 +67,12 @@ function readToml(file) {
   return parse(fs.readFileSync(file, "utf8"));
 }
 
+function writeSkill(root, target, name, content) {
+  const directory = path.join(root, "shared", "skills", target, name);
+  fs.mkdirSync(directory, { recursive: true });
+  fs.writeFileSync(path.join(directory, "SKILL.md"), content);
+}
+
 test("an explicit pin survives a later shared change", (t) => {
   const fixture = createFixture(t);
   run(fixture, ["apply"]);
@@ -203,6 +209,305 @@ test("apply refuses to overwrite uncaptured active changes", (t) => {
   assert.equal(readJson(activeClaude).theme, "light");
   assert.equal(fs.readFileSync(activeCodex, "utf8"), codexBefore);
   assert.equal(fs.existsSync(path.join(fixture.state, "config.lock")), false);
+});
+
+test("a direct skill edit becomes a local package override", (t) => {
+  const fixture = createFixture(t);
+  writeSkill(fixture.config, "agents", "example", "shared\n");
+  run(fixture, ["apply"]);
+  const active = path.join(fixture.home, ".agents", "skills", "example", "SKILL.md");
+  fs.writeFileSync(active, "local\n");
+
+  run(fixture, ["capture"]);
+
+  assert.equal(
+    fs.readFileSync(
+      path.join(fixture.config, "local", "skills", "agents", "example", "SKILL.md"),
+      "utf8",
+    ),
+    "local\n",
+  );
+  assert.equal(
+    fs.readFileSync(
+      path.join(fixture.config, "shared", "skills", "agents", "example", "SKILL.md"),
+      "utf8",
+    ),
+    "shared\n",
+  );
+});
+
+test("first skill capture keeps new packages local without deleting shared packages", (t) => {
+  const fixture = createFixture(t);
+  writeSkill(fixture.config, "agents", "shared-skill", "shared\n");
+  const activeLocal = path.join(
+    fixture.home,
+    ".agents",
+    "skills",
+    "local-skill",
+  );
+  fs.mkdirSync(activeLocal, { recursive: true });
+  fs.writeFileSync(path.join(activeLocal, "SKILL.md"), "local\n");
+
+  run(fixture, ["capture"]);
+
+  assert.equal(
+    fs.readFileSync(
+      path.join(fixture.config, "local", "skills", "agents", "local-skill", "SKILL.md"),
+      "utf8",
+    ),
+    "local\n",
+  );
+  assert.equal(
+    fs.readFileSync(
+      path.join(fixture.home, ".agents", "skills", "shared-skill", "SKILL.md"),
+      "utf8",
+    ),
+    "shared\n",
+  );
+  assert.equal(
+    fs.existsSync(
+      path.join(fixture.config, "local", "skills", "agents", ".deletions.json"),
+    ),
+    false,
+  );
+});
+
+test("a deleted active skill gets a local deletion marker", (t) => {
+  const fixture = createFixture(t);
+  writeSkill(fixture.config, "agents", "example", "shared\n");
+  run(fixture, ["apply"]);
+  fs.rmSync(path.join(fixture.home, ".agents", "skills", "example"), {
+    recursive: true,
+  });
+
+  run(fixture, ["capture"]);
+
+  assert.deepEqual(
+    readJson(
+      path.join(fixture.config, "local", "skills", "agents", ".deletions.json"),
+    ),
+    ["example"],
+  );
+  assert.equal(
+    fs.existsSync(path.join(fixture.home, ".agents", "skills", "example")),
+    false,
+  );
+
+  run(fixture, ["skills", "reset", "agents", "example"]);
+  assert.equal(
+    fs.readFileSync(
+      path.join(fixture.home, ".agents", "skills", "example", "SKILL.md"),
+      "utf8",
+    ),
+    "shared\n",
+  );
+});
+
+test("apply refuses to overwrite an uncaptured skill change", (t) => {
+  const fixture = createFixture(t);
+  writeSkill(fixture.config, "claude", "example", "shared\n");
+  run(fixture, ["apply"]);
+  const active = path.join(fixture.home, ".claude", "skills", "example", "SKILL.md");
+  fs.writeFileSync(active, "changed\n");
+
+  const result = runFailure(fixture, ["apply"]);
+
+  assert.match(result.stderr, /Skills changed after the last render/);
+  assert.equal(fs.readFileSync(active, "utf8"), "changed\n");
+});
+
+test("generated Python cache files do not create skill drift", (t) => {
+  const fixture = createFixture(t);
+  writeSkill(fixture.config, "agents", "example", "shared\n");
+  run(fixture, ["apply"]);
+  const cache = path.join(
+    fixture.home,
+    ".agents",
+    "skills",
+    "example",
+    "__pycache__",
+  );
+  fs.mkdirSync(cache);
+  fs.writeFileSync(path.join(cache, "generated.pyc"), "generated");
+
+  run(fixture, ["apply"]);
+
+  assert.equal(fs.existsSync(cache), false);
+  assert.equal(
+    fs.existsSync(path.join(fixture.config, "local", "skills", "agents", "example")),
+    false,
+  );
+});
+
+test("agent and Claude skill packages are independent", (t) => {
+  const fixture = createFixture(t);
+  writeSkill(fixture.config, "agents", "example", "agent version\n");
+  writeSkill(fixture.config, "claude", "example", "Claude version\n");
+  run(fixture, ["apply"]);
+  const claudeActive = path.join(
+    fixture.home,
+    ".claude",
+    "skills",
+    "example",
+    "SKILL.md",
+  );
+  fs.writeFileSync(claudeActive, "local Claude version\n");
+
+  run(fixture, ["capture"]);
+
+  assert.equal(
+    fs.existsSync(
+      path.join(fixture.config, "local", "skills", "agents", "example"),
+    ),
+    false,
+  );
+  assert.equal(
+    fs.readFileSync(
+      path.join(fixture.config, "local", "skills", "claude", "example", "SKILL.md"),
+      "utf8",
+    ),
+    "local Claude version\n",
+  );
+});
+
+test("a shared target alias renders as an independent active package", (t) => {
+  const fixture = createFixture(t);
+  writeSkill(fixture.config, "agents", "example", "shared package\n");
+  const claudeRoot = path.join(fixture.config, "shared", "skills", "claude");
+  fs.mkdirSync(claudeRoot, { recursive: true });
+  fs.symlinkSync("../agents/example", path.join(claudeRoot, "example"));
+
+  run(fixture, ["apply"]);
+
+  const active = path.join(fixture.home, ".claude", "skills", "example");
+  assert.equal(fs.lstatSync(active).isDirectory(), true);
+  assert.equal(fs.readFileSync(path.join(active, "SKILL.md"), "utf8"), "shared package\n");
+});
+
+test("sharing one target detaches a shared alias in the other target", (t) => {
+  const fixture = createFixture(t);
+  writeSkill(fixture.config, "agents", "example", "original\n");
+  const claudeRoot = path.join(fixture.config, "shared", "skills", "claude");
+  fs.mkdirSync(claudeRoot, { recursive: true });
+  fs.symlinkSync("../agents/example", path.join(claudeRoot, "example"));
+  run(fixture, ["apply"]);
+  const active = path.join(fixture.home, ".agents", "skills", "example", "SKILL.md");
+  fs.writeFileSync(active, "agent update\n");
+  run(fixture, ["capture"]);
+
+  run(fixture, ["skills", "share", "agents", "example"]);
+
+  assert.equal(
+    fs.readFileSync(
+      path.join(fixture.config, "shared", "skills", "agents", "example", "SKILL.md"),
+      "utf8",
+    ),
+    "agent update\n",
+  );
+  const claudeShared = path.join(
+    fixture.config,
+    "shared",
+    "skills",
+    "claude",
+    "example",
+  );
+  assert.equal(fs.lstatSync(claudeShared).isDirectory(), true);
+  assert.equal(fs.readFileSync(path.join(claudeShared, "SKILL.md"), "utf8"), "original\n");
+});
+
+test("pinning a shared skill creates an explicit local package", (t) => {
+  const fixture = createFixture(t);
+  writeSkill(fixture.config, "agents", "example", "version one\n");
+  run(fixture, ["apply"]);
+  run(fixture, ["skills", "pin", "agents", "example"]);
+  writeSkill(fixture.config, "agents", "example", "version two\n");
+
+  run(fixture, ["apply"]);
+
+  assert.equal(
+    fs.readFileSync(
+      path.join(fixture.home, ".agents", "skills", "example", "SKILL.md"),
+      "utf8",
+    ),
+    "version one\n",
+  );
+});
+
+test("sharing a local skill promotes the full package", (t) => {
+  const fixture = createFixture(t);
+  writeSkill(fixture.config, "agents", "example", "shared\n");
+  run(fixture, ["apply"]);
+  const active = path.join(fixture.home, ".agents", "skills", "example", "SKILL.md");
+  fs.writeFileSync(active, "promoted\n");
+  run(fixture, ["capture"]);
+
+  run(fixture, ["skills", "share", "agents", "example"]);
+
+  assert.equal(
+    fs.readFileSync(
+      path.join(fixture.config, "shared", "skills", "agents", "example", "SKILL.md"),
+      "utf8",
+    ),
+    "promoted\n",
+  );
+  assert.equal(
+    fs.existsSync(path.join(fixture.config, "local", "skills", "agents", "example")),
+    false,
+  );
+});
+
+test("sharing identical local packages across targets creates a shared alias", (t) => {
+  const fixture = createFixture(t);
+  for (const target of ["agents", "claude"]) {
+    const active = path.join(fixture.home, `.${target}`, "skills", "example");
+    fs.mkdirSync(active, { recursive: true });
+    fs.writeFileSync(path.join(active, "SKILL.md"), "same package\n");
+  }
+  run(fixture, ["capture"]);
+
+  run(fixture, ["skills", "share", "agents", "example"]);
+  run(fixture, ["skills", "share", "claude", "example"]);
+
+  const agentsShared = path.join(
+    fixture.config,
+    "shared",
+    "skills",
+    "agents",
+    "example",
+  );
+  const claudeShared = path.join(
+    fixture.config,
+    "shared",
+    "skills",
+    "claude",
+    "example",
+  );
+  assert.equal(fs.lstatSync(claudeShared).isSymbolicLink(), true);
+  assert.equal(fs.realpathSync(claudeShared), fs.realpathSync(agentsShared));
+  assert.equal(
+    fs.readFileSync(path.join(claudeShared, "SKILL.md"), "utf8"),
+    "same package\n",
+  );
+});
+
+test("sharing a local skill deletion removes the shared package", (t) => {
+  const fixture = createFixture(t);
+  writeSkill(fixture.config, "claude", "example", "shared\n");
+  run(fixture, ["apply"]);
+  run(fixture, ["skills", "remove", "claude", "example"]);
+
+  run(fixture, ["skills", "share", "claude", "example"]);
+
+  assert.equal(
+    fs.existsSync(path.join(fixture.config, "shared", "skills", "claude", "example")),
+    false,
+  );
+  assert.equal(
+    fs.existsSync(
+      path.join(fixture.config, "local", "skills", "claude", ".deletions.json"),
+    ),
+    false,
+  );
 });
 
 test("a live process lock blocks a second configuration command", (t) => {

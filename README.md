@@ -19,8 +19,8 @@ The command:
 - creates the bare home mirror at `~/.ai-config`;
 - installs the `ai` command in `~/.local/bin`;
 - preserves existing files in `~/.local/state/ai-config/backups`;
-- captures existing Claude and Codex values as device-local configuration;
-- renders the active Claude and Codex configuration files; and
+- captures existing Claude and Codex values and skills as device-local data;
+- renders the active Claude and Codex configuration files and skill packages; and
 - adds `~/.local/bin` to `PATH` through `~/.zprofile`.
 
 The setup does not install Claude Code, ChatGPT, or other external tools.
@@ -50,6 +50,24 @@ Generated active settings:
 ~/.codex/config.toml
 ```
 
+Skills use the same three layers. Each skill directory is one package:
+
+```text
+~/.config/ai-config/shared/skills/agents/<name>/   # tracked
+~/.config/ai-config/shared/skills/claude/<name>/   # tracked
+~/.config/ai-config/local/skills/agents/<name>/    # ignored
+~/.config/ai-config/local/skills/claude/<name>/    # ignored
+~/.agents/skills/<name>/                           # generated
+~/.claude/skills/<name>/                           # generated
+```
+
+The `agents` and `claude` targets are independent. A skill can exist in one
+target only, or it can have different packages in both targets. A local skill
+package replaces the complete shared package with the same name.
+
+The skill manager file `~/.agents/.skill-lock.json` stays device-local. The
+setup preserves it, but Git does not track it.
+
 Local values override shared values. Their presence pins them on that device,
 even when they equal the current shared value.
 
@@ -59,9 +77,10 @@ Capture direct Claude or Codex changes in the local layer:
 ai capture
 ```
 
-`ai capture` compares the active files with private last-rendered snapshots. It
-changes only the local paths that Claude or Codex changed. Existing local
-intent remains in place.
+`ai capture` compares the active files and skills with private last-rendered
+snapshots. It changes only the local settings and complete skill packages that
+changed. Existing local intent remains in place. A deleted active skill gets a
+local deletion marker in `.deletions.json`.
 
 Apply shared and local settings to the active files:
 
@@ -69,8 +88,8 @@ Apply shared and local settings to the active files:
 ai apply
 ```
 
-`ai apply` refuses to overwrite an active file with uncaptured changes. Run
-`ai capture` first if you want to keep those changes.
+`ai apply` refuses to overwrite an active file or skill with uncaptured
+changes. Run `ai capture` first if you want to keep those changes.
 
 Configuration-writing commands use a process lock. A second command exits with
 the owner PID instead of racing. A lock owned by a dead process is recovered
@@ -113,6 +132,21 @@ This command moves the effective local value, object, or deletion into the
 tracked shared file. It does not commit or push. Review the change, then publish
 it explicitly with the normal Git workflow.
 
+Skill commands use the same intent:
+
+```sh
+ai skills pin agents autoreview
+ai skills reset agents autoreview
+ai skills remove claude codex-review
+ai skills share claude codex-review
+```
+
+`pin` copies the current active package into the local layer. It stays pinned
+even when the shared package changes. `reset` removes the local override or
+deletion marker. `remove` adds a local deletion marker. `share` promotes the
+full local package or deletion to the tracked shared layer. These commands do
+not commit or push.
+
 To promote a setting to all devices, use the explicit share command, review the
 tracked change, and publish it through the home mirror:
 
@@ -133,8 +167,9 @@ configuration:
 ai sync
 ```
 
-`ai sync` captures changes made by Claude or Codex in the local layer before it
-pulls. It then applies the new shared settings and keeps the device values.
+`ai sync` captures changes made by Claude or Codex in the local layers before
+it pulls. It then applies the new shared settings and skills and keeps the
+device values and skill packages.
 
 Inspect active files, local intent, and unpublished shared changes:
 
