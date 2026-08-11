@@ -1,0 +1,7 @@
+interface:
+  display_name: "Reviewable PR"
+  short_description: "Create a precise, reviewer-guided GitHub PR"
+  default_prompt: "Use $reviewable-pr to create or update the pull request for the current branch."
+
+policy:
+  allow_implicit_invocation: false

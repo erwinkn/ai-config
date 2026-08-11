@@ -1,0 +1,4 @@
+interface:
+  display_name: "Massive"
+  short_description: "Massive API and real-time market data docs"
+  default_prompt: "Use $massive to build against the Massive REST or WebSocket market data APIs."

@@ -1,0 +1,6 @@
+interface:
+  display_name: "Grill"
+  short_description: "Stress-test a plan in focused question rounds"
+  default_prompt: "Use $grill to stress-test this idea through native question rounds."
+policy:
+  allow_implicit_invocation: false
