@@ -177,6 +177,13 @@ Inspect active files, local intent, and all tracked repository changes:
 ai status
 ```
 
+Show which active setting paths and skill packages changed since the last
+render. The overview does not print configuration values:
+
+```sh
+ai diff
+```
+
 Git commands use the explicit `ai git` namespace:
 
 ```sh

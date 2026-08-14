@@ -648,6 +648,76 @@ test("status reports changes to every tracked repository file", (t) => {
   assert.doesNotMatch(result.stdout, /untracked\.txt/);
 });
 
+test("diff reports active configuration and skill changes without values", (t) => {
+  const fixture = createFixture(t);
+  writeSkill(fixture.config, "agents", "changed-skill", "shared\n");
+  writeSkill(fixture.config, "claude", "removed-skill", "shared\n");
+  run(fixture, ["apply"]);
+
+  const activeClaude = path.join(fixture.home, ".claude", "settings.json");
+  const claude = readJson(activeClaude);
+  claude.theme = "private-theme";
+  fs.writeFileSync(activeClaude, `${JSON.stringify(claude, null, 2)}\n`);
+
+  const activeCodex = path.join(fixture.home, ".codex", "config.toml");
+  const codex = readToml(activeCodex);
+  codex.model = "private-model";
+  codex.new_setting = { nested: "private-value" };
+  delete codex.remove.value;
+  fs.writeFileSync(activeCodex, stringify(codex));
+
+  fs.writeFileSync(
+    path.join(fixture.home, ".agents", "skills", "changed-skill", "SKILL.md"),
+    "local\n",
+  );
+  const addedSkill = path.join(fixture.home, ".agents", "skills", "added-skill");
+  fs.mkdirSync(addedSkill, { recursive: true });
+  fs.writeFileSync(path.join(addedSkill, "SKILL.md"), "local\n");
+  fs.rmSync(
+    path.join(fixture.home, ".claude", "skills", "removed-skill"),
+    { recursive: true },
+  );
+
+  const result = run(fixture, ["diff"]);
+
+  assert.match(result.stdout, /Claude configuration\n {2}~ claude\.theme/);
+  assert.match(result.stdout, /Codex configuration/);
+  assert.match(result.stdout, /~ codex\.model/);
+  assert.match(result.stdout, /\+ codex\.new_setting/);
+  assert.match(result.stdout, /- codex\.remove\.value/);
+  assert.match(result.stdout, /Agent skills/);
+  assert.match(result.stdout, /\+ added-skill/);
+  assert.match(result.stdout, /~ changed-skill/);
+  assert.match(result.stdout, /Claude skills\n {2}- removed-skill/);
+  assert.doesNotMatch(
+    result.stdout,
+    /private-theme|private-model|private-value|local/,
+  );
+});
+
+test("diff reports clean active configuration and skills", (t) => {
+  const fixture = createFixture(t);
+  run(fixture, ["apply"]);
+
+  const result = run(fixture, ["diff"]);
+
+  assert.equal((result.stdout.match(/ {2}clean/g) ?? []).length, 4);
+});
+
+test("diff explains formatting-only configuration drift", (t) => {
+  const fixture = createFixture(t);
+  run(fixture, ["apply"]);
+  const activeCodex = path.join(fixture.home, ".codex", "config.toml");
+  fs.appendFileSync(activeCodex, "\n");
+
+  const result = run(fixture, ["diff"]);
+
+  assert.match(
+    result.stdout,
+    /Codex configuration\n {2}~ formatting only; no setting paths changed/,
+  );
+});
+
 test("Git path arguments are resolved from the home worktree root", (t) => {
   const fixture = createFixture(t);
   const gitDir = path.join(fixture.root, "mirror.git");
