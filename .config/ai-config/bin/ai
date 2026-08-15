@@ -1241,15 +1241,20 @@ function configDiffEntries(paths, tool) {
   const current = loader(activeFile, { required: true });
   const baseline = loader(snapshotFile, { required: true });
   const entries = diffOperations(current, baseline)
-    .map((operation) => ({
-      type:
+    .map((operation) => {
+      const type =
         operation.type === "delete"
           ? "delete"
           : hasValueAtPath(baseline, operation.path)
             ? "change"
-            : "add",
-      name: formatConfigPath(tool, operation.path),
-    }))
+            : "add";
+      return {
+        type,
+        name: formatConfigPath(tool, operation.path),
+        ...(type === "add" ? {} : { before: valueAtPath(baseline, operation.path) }),
+        ...(type === "delete" ? {} : { after: operation.value }),
+      };
+    })
     .sort((left, right) => left.name.localeCompare(right.name));
   if (entries.length === 0 && sha256(activeFile) !== sha256(snapshotFile)) {
     return [{ type: "change", name: "formatting only; no setting paths changed" }];
@@ -1286,6 +1291,11 @@ function formatDiffMarker(type) {
   }
 }
 
+function formatDiffValue(value) {
+  const serialized = JSON.stringify(value);
+  return serialized === undefined ? String(value) : serialized;
+}
+
 function printDiffSection(title, entries) {
   console.log(bold(title));
   if (entries.length === 0) {
@@ -1294,6 +1304,12 @@ function printDiffSection(title, entries) {
   }
   for (const entry of entries) {
     console.log(`  ${formatDiffMarker(entry.type)} ${entry.name}`);
+    if (Object.hasOwn(entry, "before")) {
+      console.log(`    ${red("-")} ${formatDiffValue(entry.before)}`);
+    }
+    if (Object.hasOwn(entry, "after")) {
+      console.log(`    ${green("+")} ${formatDiffValue(entry.after)}`);
+    }
   }
 }
 

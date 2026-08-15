@@ -648,7 +648,7 @@ test("status reports changes to every tracked repository file", (t) => {
   assert.doesNotMatch(result.stdout, /untracked\.txt/);
 });
 
-test("diff reports active configuration and skill changes without values", (t) => {
+test("diff reports active configuration values and skill changes", (t) => {
   const fixture = createFixture(t);
   writeSkill(fixture.config, "agents", "changed-skill", "shared\n");
   writeSkill(fixture.config, "claude", "removed-skill", "shared\n");
@@ -681,18 +681,19 @@ test("diff reports active configuration and skill changes without values", (t) =
   const result = run(fixture, ["diff"]);
 
   assert.match(result.stdout, /Claude configuration\n {2}~ claude\.theme/);
+  assert.match(result.stdout, / {4}- "dark"\n {4}\+ "private-theme"/);
   assert.match(result.stdout, /Codex configuration/);
   assert.match(result.stdout, /~ codex\.model/);
-  assert.match(result.stdout, /\+ codex\.new_setting/);
-  assert.match(result.stdout, /- codex\.remove\.value/);
+  assert.match(result.stdout, / {4}- "shared"\n {4}\+ "private-model"/);
+  assert.match(
+    result.stdout,
+    /\+ codex\.new_setting\n {4}\+ \{"nested":"private-value"\}/,
+  );
+  assert.match(result.stdout, /- codex\.remove\.value\n {4}- true/);
   assert.match(result.stdout, /Agent skills/);
   assert.match(result.stdout, /\+ added-skill/);
   assert.match(result.stdout, /~ changed-skill/);
   assert.match(result.stdout, /Claude skills\n {2}- removed-skill/);
-  assert.doesNotMatch(
-    result.stdout,
-    /private-theme|private-model|private-value|local/,
-  );
 });
 
 test("diff reports clean active configuration and skills", (t) => {

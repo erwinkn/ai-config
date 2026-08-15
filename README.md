@@ -178,7 +178,7 @@ ai status
 ```
 
 Show which active setting paths and skill packages changed since the last
-render. The overview does not print configuration values:
+render. Configuration changes include the previous and current values:
 
 ```sh
 ai diff
