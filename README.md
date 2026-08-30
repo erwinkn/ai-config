@@ -1,7 +1,7 @@
 # AI configuration
 
-This repository stores shared Claude, Codex, and agent configuration. It also
-stores the setup needed to install the configuration on a Mac.
+This repository stores shared Claude, Codex, Cursor, and agent configuration.
+It also stores the setup needed to install the configuration on a Mac.
 
 ## Set up a Mac
 
@@ -67,6 +67,17 @@ package replaces the complete shared package with the same name.
 
 The skill manager file `~/.agents/.skill-lock.json` stays device-local. The
 setup preserves it, but Git does not track it.
+
+Cursor skills and agents are tracked as home-directory files. They are not
+rendered by `ai apply`:
+
+```text
+~/.cursor/skills/<name>/   # tracked (from estack)
+~/.cursor/agents/<name>.md # tracked (from estack)
+```
+
+The home checkout only writes those paths. Cursor's other user-data under
+`~/.cursor` stays untracked.
 
 Local values override shared values. Their presence pins them on that device,
 even when they equal the current shared value.
