@@ -495,6 +495,45 @@ try {
     ]);
   });
 
+  it("holds the lock through close until an in-flight write finishes", async () => {
+    const directory = await makeDirectory();
+    let releaseHold!: () => void;
+    const hold = new Promise<void>((resolve) => {
+      releaseHold = resolve;
+    });
+    let entered = false;
+    const store = useStore(directory, {
+      onWrite: async () => {
+        entered = true;
+        await hold;
+      },
+    });
+    await store.init();
+    const writing = store.units.add({ id: "u1", track: "build" });
+    const started = Date.now();
+    while (!entered) {
+      if (Date.now() - started > 2000) throw new Error("write never entered");
+      await Bun.sleep(5);
+    }
+    const closing = store.close();
+    await expect(
+      store.units.add({ id: "late", track: "build" })
+    ).rejects.toThrow("store is closed");
+    const blocked = useStore(directory);
+    await expect(
+      blocked.units.add({ id: "u2", track: "build" })
+    ).rejects.toThrow(`store lock held by pid ${process.pid}`);
+    expect(await readdir(directory)).toContain(".orch.lock");
+    releaseHold();
+    await expect(writing).resolves.toMatchObject({ id: "u1" });
+    await closing;
+    expect(await readdir(directory)).not.toContain(".orch.lock");
+    const after = useStore(directory);
+    expect(await after.units.add({ id: "u2", track: "build" })).toMatchObject({
+      id: "u2",
+    });
+  });
+
   it("serializes concurrent writes on one store handle", async () => {
     const { store } = await initializedStore();
     await Promise.all([

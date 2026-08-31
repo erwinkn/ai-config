@@ -178,6 +178,7 @@ export interface OpenStoreOptions {
   readonly force?: boolean;
   readonly onLockStolen?: (holder: string) => void;
   readonly onStaleLock?: (holder: string) => void;
+  readonly onWrite?: () => void | Promise<void>;
 }
 
 export interface Store {
@@ -1288,6 +1289,7 @@ export function openStore(
         );
       }
       await ensureLock();
+      if (options.onWrite !== undefined) await options.onWrite();
       return await operation();
     } finally {
       release();
@@ -1653,6 +1655,8 @@ export function openStore(
       if (closed) {
         return;
       }
+      closed = true;
+      await writeTail;
       if (lockRequest !== null) {
         try {
           await lockRequest;
@@ -1662,7 +1666,6 @@ export function openStore(
       }
       const release = releaseLock;
       releaseLock = null;
-      closed = true;
       if (release !== null) {
         await release();
       }
