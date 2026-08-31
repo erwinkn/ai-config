@@ -344,6 +344,24 @@ describe("Store", () => {
     expect(await store.inbox.drain()).toHaveLength(2);
     expect(await store.inbox.count()).toBe(0);
     expect(await store.inbox.peek()).toEqual([]);
+
+    await store.inbox.push({
+      agent: "worker-3",
+      unit: "u3",
+      status: "done",
+    });
+    await store.inbox.push({
+      agent: "worker-4",
+      unit: "u4",
+      status: "done",
+    });
+    const [peeked, drained] = await Promise.all([
+      store.inbox.peek(),
+      store.inbox.drain(),
+    ]);
+    expect(drained).toHaveLength(2);
+    expect([0, 2]).toContain(peeked.length);
+    expect(await store.inbox.count()).toBe(0);
     expect(await readdir(join(directory, "inbox"))).toEqual([]);
     expect(
       (await readdir(directory)).filter((name) =>

@@ -1487,14 +1487,12 @@ export function openStore(
           await rm(drained, { recursive: true, force: true });
           return rows;
         }),
-      peek: async () => {
-        ensureOpen();
-        return readPointers(join(store, "inbox"));
-      },
-      count: async () => {
-        ensureOpen();
-        return (await readPointers(join(store, "inbox"))).length;
-      },
+      peek: async () =>
+        beginWrite(async () => readPointers(join(store, "inbox"))),
+      count: async () =>
+        beginWrite(
+          async () => (await readPointers(join(store, "inbox"))).length
+        ),
     },
     gates: {
       park: async (params) =>
