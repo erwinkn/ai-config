@@ -360,7 +360,7 @@ describe("Store", () => {
       store.inbox.drain(),
     ]);
     expect(drained).toHaveLength(2);
-    expect([0, 2]).toContain(peeked.length);
+    expect(peeked).toHaveLength(2);
     expect(await store.inbox.count()).toBe(0);
     expect(await readdir(join(directory, "inbox"))).toEqual([]);
     expect(
@@ -370,7 +370,73 @@ describe("Store", () => {
     ).toEqual([]);
   });
 
-  it("replaces a stale lock whose holder pid is dead", async () => {
+  it("does not fire onWrite for inbox peek or count", async () => {
+    const directory = await makeDirectory();
+    let writes = 0;
+    const store = useStore(directory, {
+      onWrite: () => {
+        writes += 1;
+      },
+    });
+    await store.init();
+    writes = 0;
+    expect(await store.inbox.peek()).toEqual([]);
+    expect(await store.inbox.count()).toBe(0);
+    expect(writes).toBe(0);
+    await store.inbox.push({
+      agent: "worker-1",
+      unit: "u1",
+      status: "done",
+    });
+    expect(writes).toBe(1);
+  });
+
+  it("restores orphaned inbox drain directories on the next read", async () => {
+    const { directory, store } = await initializedStore();
+    const orphan = join(directory, ".inbox-drain-dead");
+    await mkdir(orphan);
+    await writeFile(
+      join(orphan, "orphan.tsv"),
+      "ts\tagent\nu-orphan\tdone\t\n"
+    );
+    expect(await store.inbox.peek()).toMatchObject([{ unit: "u-orphan" }]);
+    expect(
+      (await readdir(directory)).filter((name) =>
+        name.startsWith(".inbox-drain-")
+      )
+    ).toEqual([]);
+  });
+
+  it("holds the lock through close until init finishes", async () => {
+    const directory = await makeDirectory();
+    let releaseHold!: () => void;
+    const hold = new Promise<void>((resolve) => {
+      releaseHold = resolve;
+    });
+    let entered = false;
+    const store = useStore(directory, {
+      onWrite: async () => {
+        entered = true;
+        await hold;
+      },
+    });
+    const initing = store.init();
+    const started = Date.now();
+    while (!entered) {
+      if (Date.now() - started > 2000) throw new Error("init never entered");
+      await Bun.sleep(5);
+    }
+    const closing = store.close();
+    expect(await readdir(directory)).toContain(".orch.lock");
+    releaseHold();
+    await initing;
+    await closing;
+    expect(await readdir(directory)).not.toContain(".orch.lock");
+    const after = useStore(directory);
+    expect(
+      await after.units.add({ id: "u1", track: "build" })
+    ).toMatchObject({ id: "u1" });
+  });
     const { directory } = await initializedStore();
     const exited = Bun.spawn(["true"]);
     await exited.exited;

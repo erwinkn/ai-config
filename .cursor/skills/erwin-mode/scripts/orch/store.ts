@@ -682,6 +682,40 @@ async function readPointers(
   return (await snapshotInbox(directory)).rows;
 }
 
+async function restoreOrphanedInbox(store: string): Promise<void> {
+  const inbox = join(store, "inbox");
+  if (!(await exists(inbox))) return;
+  let names: string[];
+  try {
+    names = await readdir(store);
+  } catch (error) {
+    if (errorCode(error) === "ENOENT") return;
+    throw error;
+  }
+  for (const name of names) {
+    if (!name.startsWith(".inbox-drain-")) continue;
+    const orphan = join(store, name);
+    let files: string[];
+    try {
+      files = await readdir(orphan);
+    } catch (error) {
+      if (errorCode(error) === "ENOENT") continue;
+      throw error;
+    }
+    for (const file of files) {
+      if (!file.endsWith(".tsv")) continue;
+      const from = join(orphan, file);
+      try {
+        await rename(from, join(inbox, file));
+      } catch (error) {
+        if (errorCode(error) !== "EEXIST") throw error;
+        await rename(from, join(inbox, `recovered-${file}`));
+      }
+    }
+    await rm(orphan, { recursive: true, force: true });
+  }
+}
+
 function renderGates(rows: readonly Gate[]): string {
   if (rows.length === 0) {
     return "";
@@ -1274,7 +1308,7 @@ export function openStore(
   };
 
   let writeTail: Promise<void> = Promise.resolve();
-  const beginWrite = async <T>(operation: () => Promise<T>): Promise<T> => {
+  const runExclusive = async <T>(operation: () => Promise<T>): Promise<T> => {
     ensureOpen();
     let release!: () => void;
     const previous = writeTail;
@@ -1290,12 +1324,16 @@ export function openStore(
         );
       }
       await ensureLock();
-      if (options.onWrite !== undefined) await options.onWrite();
       return await operation();
     } finally {
       release();
     }
   };
+  const beginWrite = async <T>(operation: () => Promise<T>): Promise<T> =>
+    runExclusive(async () => {
+      if (options.onWrite !== undefined) await options.onWrite();
+      return operation();
+    });
 
   return {
     units: {
@@ -1453,6 +1491,7 @@ export function openStore(
               `store is not initialized at ${store}; run orch init`
             );
           }
+          await restoreOrphanedInbox(store);
           const timestamp = pointer.ts.replace(/[:.]/g, "-");
           const filename = `${timestamp}-${process.pid}-${randomUUID()}.tsv`;
           const contents = `${pointerCells(pointer).map(cleanCell).join("\t")}\n`;
@@ -1462,6 +1501,7 @@ export function openStore(
       drain: async () =>
         beginWrite(async () => {
           const inbox = join(store, "inbox");
+          await restoreOrphanedInbox(store);
           const { files, rows } = await snapshotInbox(inbox);
           if (files.length === 0) return rows;
           const drained = join(
@@ -1488,11 +1528,15 @@ export function openStore(
           return rows;
         }),
       peek: async () =>
-        beginWrite(async () => readPointers(join(store, "inbox"))),
+        runExclusive(async () => {
+          await restoreOrphanedInbox(store);
+          return readPointers(join(store, "inbox"));
+        }),
       count: async () =>
-        beginWrite(
-          async () => (await readPointers(join(store, "inbox"))).length
-        ),
+        runExclusive(async () => {
+          await restoreOrphanedInbox(store);
+          return (await readPointers(join(store, "inbox"))).length;
+        }),
     },
     gates: {
       park: async (params) =>
@@ -1641,14 +1685,15 @@ export function openStore(
     init: async () => {
       ensureOpen();
       await mkdir(store, { recursive: true });
-      await ensureLock();
-      await writeIfMissing(join(store, "units.tsv"), `${UNIT_HEADER}\n`);
-      await writeIfMissing(join(store, "ledger.tsv"), `${LEDGER_HEADER}\n`);
-      await mkdir(join(store, "inbox"), { recursive: true });
-      await writeIfMissing(join(store, "gates.md"), "");
-      await writeIfMissing(join(store, "preferences.md"), "");
-      await writeIfMissing(join(store, "frontier.json"), "{}\n");
-      return { store };
+      return beginWrite(async () => {
+        await writeIfMissing(join(store, "units.tsv"), `${UNIT_HEADER}\n`);
+        await writeIfMissing(join(store, "ledger.tsv"), `${LEDGER_HEADER}\n`);
+        await mkdir(join(store, "inbox"), { recursive: true });
+        await writeIfMissing(join(store, "gates.md"), "");
+        await writeIfMissing(join(store, "preferences.md"), "");
+        await writeIfMissing(join(store, "frontier.json"), "{}\n");
+        return { store };
+      });
     },
     close: () => {
       if (closeRequest !== null) {
