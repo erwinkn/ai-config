@@ -74,7 +74,7 @@ git worktree list --porcelain | awk '/^worktree /{print $2}' | while read -r wt;
 	case "$dirty" in wip:*) bucket=hold-wip ;; *)
 		case "$pr" in *OPEN*) bucket=hold-open-pr ;; *)
 			if [ "$recent" = yes ]; then bucket=verify-recent-chat
-			elif [ "$merged" = YES ] || [ "$pr" != "-" ]; then bucket=safe
+			elif [ "$merged" = YES ] || [[ "$pr" == *MERGED* ]]; then bucket=safe
 			else bucket=review; fi ;;
 		esac ;;
 	esac
