@@ -438,6 +438,45 @@ describe("queued-stack cadence", () => {
     expect(second.emit).toBe(false);
     expect(planQueue(second.state, 300).work?.kind).toBe("whole-stack-sweep");
   });
+
+  it("times out a queued wait without another GitHub snapshot", async () => {
+    const reads: number[] = [];
+    const sleeps: number[] = [];
+    let now = 0;
+    const base = fakeReader();
+    const reader = {
+      ...base,
+      async pullRequest(pr: PrContext) {
+        reads.push(pr.number);
+        return base.pullRequest(pr);
+      },
+    } satisfies GitHubReader;
+    const verdict = await runQueued({
+      dependencies: {
+        reader,
+        clock: {
+          now: () => now,
+          observedAt: () => "2026-07-26T00:00:00.000Z",
+          async sleep(seconds) {
+            sleeps.push(seconds);
+            now += seconds;
+          },
+        },
+        emit() {},
+      },
+      contexts: [context(60), context(61)],
+      options: { ...options, interval: 10, timeout: 5 },
+    });
+    expect(verdict.kind).toBe("TIMEOUT");
+    if (verdict.kind !== "TIMEOUT") throw new Error("expected TIMEOUT");
+    expect(verdict.reason).toMatchObject({
+      kind: "queued-stack",
+      frontier: { number: 60 },
+      unmergedCount: 2,
+    });
+    expect(sleeps).toEqual([5]);
+    expect(reads).toEqual([60, 61]);
+  });
 });
 
 it("uses the specified retry floor and cap", () => {

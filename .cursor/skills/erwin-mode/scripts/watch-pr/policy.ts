@@ -853,7 +853,21 @@ export async function runQueued(args: {
               reason: evaluation.reason,
             })
           );
-        return { kind: "sleep", seconds: args.options.interval };
+        return {
+          kind: "sleep",
+          seconds: args.options.interval,
+          onDeadline: () =>
+            stamp({
+              kind: "TIMEOUT",
+              terminal: true,
+              exitCode: 5,
+              reason: {
+                kind: "queued-stack",
+                frontier: evaluation.frontier,
+                unmergedCount: activeRows(state).length,
+              },
+            }),
+        };
       default: {
         const exhaustive: never = evaluation;
         return exhaustive;

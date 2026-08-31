@@ -390,17 +390,71 @@ async function acquireLock(
     await handle.close();
   };
 
-  const takeOver = async (): Promise<void> => {
-    await unlink(path);
+  const takeOver = async (expectedHolder: string): Promise<void> => {
+    const claim = `${path}.recover`;
+    const createClaim = async (): Promise<boolean> => {
+      try {
+        const handle = await open(claim, "wx");
+        await handle.writeFile(`${pid}\n`);
+        await handle.close();
+        return true;
+      } catch (error) {
+        if (errorCode(error) === "EEXIST") return false;
+        throw error;
+      }
+    };
+    const readHolder = async (target: string): Promise<string> => {
+      try {
+        return (await readFile(target, "utf8")).trim() || "unknown";
+      } catch {
+        return "unknown";
+      }
+    };
+    let claimed = await createClaim();
+    if (!claimed) {
+      const claimHolder = await readHolder(claim);
+      if (!holderIsDead(claimHolder)) {
+        throw new UserError(`store lock held by pid ${claimHolder}`);
+      }
+      try {
+        await unlink(claim);
+      } catch (error) {
+        if (errorCode(error) !== "ENOENT") throw error;
+      }
+      claimed = await createClaim();
+      if (!claimed) {
+        throw new UserError(
+          `store lock held by pid ${await readHolder(claim)}`
+        );
+      }
+    }
     try {
+      let current: string | null = null;
+      try {
+        current = (await readFile(path, "utf8")).trim() || "unknown";
+      } catch (error) {
+        if (errorCode(error) !== "ENOENT") throw error;
+      }
+      if (current !== null && current !== expectedHolder) {
+        throw new UserError(`store lock held by pid ${current}`);
+      }
+      if (current !== null) {
+        await unlink(path);
+      }
       await create();
     } catch (retryError) {
       if (errorCode(retryError) === "EEXIST") {
-        const retryHolder =
-          (await readFile(path, "utf8")).trim() || "unknown";
-        throw new UserError(`store lock held by pid ${retryHolder}`);
+        throw new UserError(
+          `store lock held by pid ${await readHolder(path)}`
+        );
       }
       throw retryError;
+    } finally {
+      try {
+        await unlink(claim);
+      } catch (error) {
+        if (errorCode(error) !== "ENOENT") throw error;
+      }
     }
   };
 
@@ -418,10 +472,10 @@ async function acquireLock(
     }
     if (holderIsDead(holder)) {
       options.onStaleLock?.(holder);
-      await takeOver();
+      await takeOver(holder);
     } else if (options.force) {
       options.onLockStolen?.(holder);
-      await takeOver();
+      await takeOver(holder);
     } else {
       throw new UserError(`store lock held by pid ${holder}`);
     }
@@ -1359,15 +1413,28 @@ export function openStore(
         await beginWrite();
         const inbox = join(store, "inbox");
         const rows = await readPointers(inbox);
+        const files = (await readdir(inbox)).filter((name) =>
+          name.endsWith(".tsv")
+        );
+        if (files.length === 0) return rows;
         const drained = join(
           store,
           `.inbox-drain-${process.pid}-${randomUUID()}`
         );
-        await rename(inbox, drained);
+        await mkdir(drained);
         try {
-          await mkdir(inbox);
+          for (const name of files) {
+            await rename(join(inbox, name), join(drained, name));
+          }
         } catch (error) {
-          await rename(drained, inbox);
+          for (const name of files) {
+            try {
+              await rename(join(drained, name), join(inbox, name));
+            } catch {
+              // best-effort restore; inbox directory itself stayed put
+            }
+          }
+          await rm(drained, { recursive: true, force: true });
           throw error;
         }
         await rm(drained, { recursive: true, force: true });

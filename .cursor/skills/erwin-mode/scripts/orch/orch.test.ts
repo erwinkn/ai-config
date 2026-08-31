@@ -343,6 +343,7 @@ describe("Store", () => {
     expect(await store.inbox.count()).toBe(2);
     expect(await store.inbox.drain()).toHaveLength(2);
     expect(await store.inbox.count()).toBe(0);
+    expect(await store.inbox.peek()).toEqual([]);
     expect(await readdir(join(directory, "inbox"))).toEqual([]);
     expect(
       (await readdir(directory)).filter((name) =>
@@ -367,6 +368,81 @@ describe("Store", () => {
     expect(stale).toEqual([String(exited.pid)]);
     await recovered.close();
     expect(await readdir(directory)).not.toContain(".orch.lock");
+    expect(await readdir(directory)).not.toContain(".orch.lock.recover");
+  });
+
+  it("lets only one writer recover a stale lock", async () => {
+    const { directory, store } = await initializedStore();
+    await store.close();
+    const exited = Bun.spawn(["true"]);
+    await exited.exited;
+    await writeFile(join(directory, ".orch.lock"), `${exited.pid}\n`);
+
+    const hold = join(directory, "hold");
+    await writeFile(hold, "1\n");
+    const storePath = join(import.meta.dir, "store.ts");
+    const spawnContender = (id: string, resultPath: string) =>
+      Bun.spawn(
+        [
+          process.execPath,
+          "-e",
+          `
+import { access, writeFile } from "node:fs/promises";
+import { openStore } from ${JSON.stringify(storePath)};
+const store = openStore(${JSON.stringify(directory)});
+try {
+  await store.units.add({ id: ${JSON.stringify(id)}, track: "build" });
+  await writeFile(${JSON.stringify(resultPath)}, "won\\n");
+  while (true) {
+    try {
+      await access(${JSON.stringify(hold)});
+    } catch {
+      break;
+    }
+    await Bun.sleep(20);
+  }
+} catch (error) {
+  await writeFile(
+    ${JSON.stringify(resultPath)},
+    \`lost:\${error instanceof Error ? error.message : String(error)}\\n\`
+  );
+  process.exitCode = 2;
+} finally {
+  await store.close();
+}
+`,
+        ],
+        { stdout: "pipe", stderr: "pipe" }
+      );
+
+    const firstResult = join(directory, "first.txt");
+    const secondResult = join(directory, "second.txt");
+    const first = spawnContender("u-a", firstResult);
+    const second = spawnContender("u-b", secondResult);
+    const waitFor = async (path: string): Promise<string> => {
+      const started = Date.now();
+      while (Date.now() - started < 8000) {
+        try {
+          return (await readFile(path, "utf8")).trim();
+        } catch {
+          await Bun.sleep(20);
+        }
+      }
+      throw new Error(`timed out waiting for ${path}`);
+    };
+
+    const outcomes = [await waitFor(firstResult), await waitFor(secondResult)];
+    await rm(hold);
+    await Promise.all([first.exited, second.exited]);
+    const won = outcomes.filter((row) => row === "won");
+    const lost = outcomes.filter((row) => row.startsWith("lost:"));
+    expect(won).toHaveLength(1);
+    expect(lost).toHaveLength(1);
+    expect(lost[0]).toContain("store lock held by pid");
+
+    const observer = useStore(directory);
+    expect(await observer.units.list()).toHaveLength(1);
+    expect(await readdir(directory)).not.toContain(".orch.lock.recover");
   });
 
   it("blocks a writer and steals the pid lock only with force", async () => {
