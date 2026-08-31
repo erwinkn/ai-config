@@ -1,9 +1,12 @@
 # ~/.cursor is Cursor's full user-data dir when this repo is the home mirror.
-# Track only published skills and agents.
+# Track only the estack plugin.
 
 /*
 !/.gitignore
 !/LICENSE
+!/README.md
+!/.cursor-plugin/
+!/.cursor-plugin/**
 !/skills/
 !/skills/**
 !/agents/

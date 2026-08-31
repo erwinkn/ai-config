@@ -1,0 +1,17 @@
+{
+	"name": "ai-config",
+	"owner": {
+		"name": "Erwin Kuhn",
+		"email": "erwin.kuhn@protonmail.com"
+	},
+	"metadata": {
+		"description": "Private Cursor plugins from ai-config"
+	},
+	"plugins": [
+		{
+			"name": "estack",
+			"source": "./",
+			"description": "Private Cursor plugin: erwin-mode, GitHub stacked PRs, cloud coding agents."
+		}
+	]
+}

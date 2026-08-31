@@ -68,16 +68,23 @@ package replaces the complete shared package with the same name.
 The skill manager file `~/.agents/.skill-lock.json` stays device-local. The
 setup preserves it, but Git does not track it.
 
-Cursor skills and agents are tracked as home-directory files. They are not
-rendered by `ai apply`:
+Cursor ships estack as a plugin (skills and agents under `.cursor/`). It is
+not rendered by `ai apply`.
+
+Install from this private repo in Cursor:
 
 ```text
-~/.cursor/skills/<name>/   # tracked (from estack)
-~/.cursor/agents/<name>.md # tracked (from estack)
+/add-plugin erwinkn/ai-config
 ```
 
-The home checkout only writes those paths. Cursor's other user-data under
-`~/.cursor` stays untracked.
+Or Dashboard → Plugins → Import from Repo. The IDE clones with local git
+credentials; if the cache dir is empty, delete `~/.cursor/plugins/cache` and
+retry, or symlink `.cursor` into `~/.cursor/plugins/local/estack`.
+
+The home checkout still writes `~/.cursor/skills` and `~/.cursor/agents`.
+Other Cursor user-data under `~/.cursor` stays untracked. If you both sync
+the home mirror and install the plugin, `/erwin-mode` will appear twice —
+prefer the plugin install.
 
 Local values override shared values. Their presence pins them on that device,
 even when they equal the current shared value.

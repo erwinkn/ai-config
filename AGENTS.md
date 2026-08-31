@@ -1,5 +1,5 @@
 - Run skill scripts with `skillx <skill-name> ...`
 - Access the bare home Git mirror through `ai git <arguments>`
 - Active Claude and Codex setting changes stay local unless `ai share <tool> <path...>` promotes them
-- Cursor skills and agents live under `.cursor/` and are not rendered by `ai apply`
+- Cursor plugin estack lives under `.cursor/` (manifests in `.cursor-plugin/`) and is not rendered by `ai apply`
 - Common workflow: `ai share` -> review -> `ai git commit` -> `ai git push` -> `ai sync` on another device
