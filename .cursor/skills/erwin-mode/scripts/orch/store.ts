@@ -872,16 +872,22 @@ async function readStanding(
   return result;
 }
 
+function emptyCounts(): Record<string, number> {
+  return Object.create(null) as Record<string, number>;
+}
+
 function countValues(values: readonly string[]): Counts {
-  const result: Record<string, number> = {};
+  const result = emptyCounts();
   for (const value of values) {
     result[value] = (result[value] ?? 0) + 1;
   }
-  return Object.fromEntries(
-    Object.entries(result).sort(([left], [right]) =>
-      left.localeCompare(right)
-    )
-  );
+  const sorted = emptyCounts();
+  for (const key of Object.keys(result).sort((left, right) =>
+    left.localeCompare(right)
+  )) {
+    sorted[key] = result[key] ?? 0;
+  }
+  return sorted;
 }
 
 function summarize(
@@ -905,7 +911,7 @@ function countRecord(value: unknown): Record<string, number> | null {
   if (!isRecord(value)) {
     return null;
   }
-  const result: Record<string, number> = {};
+  const result = emptyCounts();
   for (const [name, count] of Object.entries(value)) {
     if (
       typeof count !== "number" ||

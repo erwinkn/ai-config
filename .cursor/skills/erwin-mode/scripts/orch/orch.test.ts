@@ -275,6 +275,21 @@ describe("Store", () => {
     ).rejects.toBeInstanceOf(NotFoundError);
   });
 
+  it("counts __proto__ and constructor as ordinary unit states", async () => {
+    const { store } = await initializedStore();
+    await store.units.add({ id: "u1", track: "build" });
+    await store.units.add({ id: "u2", track: "build" });
+    await store.units.set({ id: "u1", state: "__proto__" });
+    await store.units.set({ id: "u2", state: "constructor" });
+    const counts = await store.units.counts();
+    expect(Object.getOwnPropertyNames(counts).sort()).toEqual([
+      "__proto__",
+      "constructor",
+    ]);
+    expect(counts["__proto__"]).toBe(1);
+    expect(counts.constructor).toBe(1);
+  });
+
   it("records, replaces, checks, and summarizes typed ledger verdicts", async () => {
     const { store } = await initializedStore();
 
