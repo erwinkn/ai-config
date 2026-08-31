@@ -397,7 +397,7 @@ describe("Store", () => {
     await mkdir(orphan);
     await writeFile(
       join(orphan, "orphan.tsv"),
-      "ts\tagent\nu-orphan\tdone\t\n"
+      "ts\tagent\tu-orphan\tdone\t\n"
     );
     expect(await store.inbox.peek()).toMatchObject([{ unit: "u-orphan" }]);
     expect(
@@ -437,6 +437,8 @@ describe("Store", () => {
       await after.units.add({ id: "u1", track: "build" })
     ).toMatchObject({ id: "u1" });
   });
+
+  it("replaces a stale lock whose holder pid is dead", async () => {
     const { directory } = await initializedStore();
     const exited = Bun.spawn(["true"]);
     await exited.exited;
@@ -585,9 +587,12 @@ try {
     const hold = new Promise<void>((resolve) => {
       releaseHold = resolve;
     });
+    let writes = 0;
     let entered = false;
     const store = useStore(directory, {
       onWrite: async () => {
+        writes += 1;
+        if (writes === 1) return;
         entered = true;
         await hold;
       },
