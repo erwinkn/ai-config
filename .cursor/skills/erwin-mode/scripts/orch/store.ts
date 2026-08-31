@@ -1245,6 +1245,7 @@ export function openStore(
 ): Store {
   const store = resolve(directory);
   let closed = false;
+  let closeRequest: Promise<void> | null = null;
   let releaseLock: (() => Promise<void>) | null = null;
   let lockRequest: Promise<void> | null = null;
 
@@ -1651,24 +1652,27 @@ export function openStore(
       await writeIfMissing(join(store, "frontier.json"), "{}\n");
       return { store };
     },
-    close: async () => {
-      if (closed) {
-        return;
+    close: () => {
+      if (closeRequest !== null) {
+        return closeRequest;
       }
       closed = true;
-      await writeTail;
-      if (lockRequest !== null) {
-        try {
-          await lockRequest;
-        } catch {
-          // A failed acquisition has no lock to release.
+      closeRequest = (async () => {
+        await writeTail;
+        if (lockRequest !== null) {
+          try {
+            await lockRequest;
+          } catch {
+            // A failed acquisition has no lock to release.
+          }
         }
-      }
-      const release = releaseLock;
-      releaseLock = null;
-      if (release !== null) {
-        await release();
-      }
+        const release = releaseLock;
+        releaseLock = null;
+        if (release !== null) {
+          await release();
+        }
+      })();
+      return closeRequest;
     },
   };
 }

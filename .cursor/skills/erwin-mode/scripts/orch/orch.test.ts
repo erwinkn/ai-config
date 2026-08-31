@@ -516,6 +516,15 @@ try {
       await Bun.sleep(5);
     }
     const closing = store.close();
+    const closingAgain = store.close();
+    let firstClosed = false;
+    let secondClosed = false;
+    void closing.then(() => {
+      firstClosed = true;
+    });
+    void closingAgain.then(() => {
+      secondClosed = true;
+    });
     await expect(
       store.units.add({ id: "late", track: "build" })
     ).rejects.toThrow("store is closed");
@@ -524,9 +533,13 @@ try {
       blocked.units.add({ id: "u2", track: "build" })
     ).rejects.toThrow(`store lock held by pid ${process.pid}`);
     expect(await readdir(directory)).toContain(".orch.lock");
+    expect(firstClosed).toBe(false);
+    expect(secondClosed).toBe(false);
     releaseHold();
     await expect(writing).resolves.toMatchObject({ id: "u1" });
-    await closing;
+    await Promise.all([closing, closingAgain]);
+    expect(firstClosed).toBe(true);
+    expect(secondClosed).toBe(true);
     expect(await readdir(directory)).not.toContain(".orch.lock");
     const after = useStore(directory);
     expect(await after.units.add({ id: "u2", track: "build" })).toMatchObject({
