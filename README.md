@@ -1,7 +1,7 @@
 # AI configuration
 
-This repository stores shared Claude, Codex, and agent configuration. It also
-stores the setup needed to install the configuration on a Mac.
+This repository stores shared Claude, Codex, Cursor, and agent configuration.
+It also stores the setup needed to install the configuration on a Mac.
 
 ## Set up a Mac
 
@@ -67,6 +67,26 @@ package replaces the complete shared package with the same name.
 
 The skill manager file `~/.agents/.skill-lock.json` stays device-local. The
 setup preserves it, but Git does not track it.
+
+Cursor ships estack as a plugin (skills and agents under `.cursor/`). It is
+not rendered by `ai apply`.
+
+Install from this private repo in Cursor:
+
+```text
+/add-plugin erwinkn/ai-config
+```
+
+Marketplace source is `.cursor`, so skill paths like
+`skills/erwin-mode/references/models.md` resolve from the plugin root. The IDE
+clones with local git credentials; if the cache dir is empty, delete
+`~/.cursor/plugins/cache` and retry, or symlink `.cursor` into
+`~/.cursor/plugins/local/estack`.
+
+The home checkout still writes `~/.cursor/skills` and `~/.cursor/agents`.
+Other Cursor user-data under `~/.cursor` stays untracked. If you both sync
+the home mirror and install the plugin, `/erwin-mode` will appear twice —
+prefer the plugin install.
 
 Local values override shared values. Their presence pins them on that device,
 even when they equal the current shared value.
