@@ -2,7 +2,7 @@ import { spawn } from "node:child_process";
 import type * as T from "./types.ts";
 import { nonEmpty, parsePrNumber } from "./types.ts";
 export const REVIEW_THREADS_QUERY =
-  "\nquery ReviewThreads($owner: String!, $repo: String!, $pr: Int!) {\n  repository(owner: $owner, name: $repo) {\n    pullRequest(number: $pr) {\n      reviewThreads(first: 100) {\n        nodes {\n          id\n          isResolved\n          comments(first: 10) {\n            nodes {\n              body\n              createdAt\n              path\n              line\n              author { login }\n              pullRequestReview { databaseId }\n            }\n          }\n        }\n      }\n    }\n  }\n}\n";
+  "\nquery ReviewThreads($owner: String!, $repo: String!, $pr: Int!, $after: String) {\n  repository(owner: $owner, name: $repo) {\n    pullRequest(number: $pr) {\n      reviewThreads(first: 100, after: $after) {\n        pageInfo {\n          hasNextPage\n          endCursor\n        }\n        nodes {\n          id\n          isResolved\n          comments(first: 10) {\n            nodes {\n              body\n              createdAt\n              path\n              line\n              author { login }\n              pullRequestReview { databaseId }\n            }\n          }\n        }\n      }\n    }\n  }\n}\n";
 export const PR_COMMIT_STATUS_QUERY =
   "\nquery PrCommitStatuses($owner: String!, $repo: String!, $pr: Int!) {\n  repository(owner: $owner, name: $repo) {\n    pullRequest(number: $pr) {\n      commits(last: 50) {\n        nodes {\n          commit {\n            oid\n            statusCheckRollup {\n              state\n            }\n          }\n        }\n      }\n    }\n  }\n}\n";
 export const PR_CHECK_ROLLUP_QUERY =
@@ -378,11 +378,44 @@ function passKey(comment: T.ReviewComment | null): string | null {
     ? null
     : `review:${comment.reviewDatabaseId}`;
 }
-export function parseReviewThreads(value: unknown): readonly T.ReviewThread[] {
-  const nodes = list(
-    at(value, ["data", "repository", "pullRequest", "reviewThreads", "nodes"]),
-    "reviewThreads.nodes"
+export function parseReviewThreadPage(value: unknown): {
+  readonly nodes: readonly unknown[];
+  readonly endCursor: string | null;
+} {
+  const threads = record(
+    at(value, ["data", "repository", "pullRequest", "reviewThreads"]),
+    "reviewThreads"
   );
+  const nodes = list(threads.nodes, "reviewThreads.nodes");
+  const page = record(threads.pageInfo, "reviewThreads.pageInfo");
+  if (typeof page.hasNextPage !== "boolean")
+    missing("reviewThreads.pageInfo.hasNextPage", page.hasNextPage);
+  const cursor = optionalString(
+    page.endCursor,
+    "reviewThreads.pageInfo.endCursor"
+  );
+  return { nodes, endCursor: page.hasNextPage && cursor ? cursor : null };
+}
+
+export async function collectReviewThreadNodes(
+  fetchPage: (after: string | null) => Promise<{
+    readonly nodes: readonly unknown[];
+    readonly endCursor: string | null;
+  }>
+): Promise<readonly unknown[]> {
+  const nodes: unknown[] = [];
+  let after: string | null = null;
+  do {
+    const page = await fetchPage(after);
+    nodes.push(...page.nodes);
+    after = page.endCursor;
+  } while (after !== null);
+  return nodes;
+}
+
+export function parseReviewThreadNodes(
+  nodes: readonly unknown[]
+): readonly T.ReviewThread[] {
   const threads: {
     readonly id: string;
     readonly firstComment: T.ReviewComment | null;
@@ -419,6 +452,21 @@ export function parseReviewThreads(value: unknown): readonly T.ReviewThread[] {
       isReviewBot: isReviewBot(firstComment),
       reviewBotPasses: passes,
     }));
+}
+
+export function parseReviewThreads(value: unknown): readonly T.ReviewThread[] {
+  return parseReviewThreadNodes(
+    list(
+      at(value, [
+        "data",
+        "repository",
+        "pullRequest",
+        "reviewThreads",
+        "nodes",
+      ]),
+      "reviewThreads.nodes"
+    )
+  );
 }
 export function parsePullRequest(
   value: unknown,
@@ -592,9 +640,12 @@ export class GhGitHubReader implements T.GitHubReader {
   async reviewThreads(
     context: T.PrContext
   ): Promise<readonly T.ReviewThread[]> {
-    return parseReviewThreads(
-      await runJson(graphqlArgs(REVIEW_THREADS_QUERY, context))
-    );
+    const nodes = await collectReviewThreadNodes(async (after) => {
+      const argv = graphqlArgs(REVIEW_THREADS_QUERY, context);
+      if (after !== null) argv.push("-f", `after=${after}`);
+      return parseReviewThreadPage(await runJson(argv));
+    });
+    return parseReviewThreadNodes(nodes);
   }
   async commitRollups(
     context: T.PrContext

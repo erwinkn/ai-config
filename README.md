@@ -77,9 +77,11 @@ Install from this private repo in Cursor:
 /add-plugin erwinkn/ai-config
 ```
 
-Or Dashboard → Plugins → Import from Repo. The IDE clones with local git
-credentials; if the cache dir is empty, delete `~/.cursor/plugins/cache` and
-retry, or symlink `.cursor` into `~/.cursor/plugins/local/estack`.
+Marketplace source is `.cursor`, so skill paths like
+`skills/erwin-mode/references/models.md` resolve from the plugin root. The IDE
+clones with local git credentials; if the cache dir is empty, delete
+`~/.cursor/plugins/cache` and retry, or symlink `.cursor` into
+`~/.cursor/plugins/local/estack`.
 
 The home checkout still writes `~/.cursor/skills` and `~/.cursor/agents`.
 Other Cursor user-data under `~/.cursor` stays untracked. If you both sync

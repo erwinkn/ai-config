@@ -11,3 +11,4 @@
 !/skills/**
 !/agents/
 !/agents/**
+node_modules/

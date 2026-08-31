@@ -352,6 +352,31 @@ const deadlinePassed = (
   options: T.PollingOptions,
   now: number
 ): boolean => options.timeout > 0 && now - started >= options.timeout;
+const remainingDeadline = (
+  started: number,
+  options: T.PollingOptions,
+  now: number
+): number | null =>
+  options.timeout <= 0 ? null : options.timeout - (now - started);
+async function sleepUntilDeadline(args: {
+  readonly clock: WatchClock;
+  readonly started: number;
+  readonly options: T.PollingOptions;
+  readonly seconds: number;
+}): Promise<"ok" | "expired"> {
+  const remaining = remainingDeadline(
+    args.started,
+    args.options,
+    args.clock.now()
+  );
+  if (remaining !== null && remaining <= 0) return "expired";
+  await args.clock.sleep(
+    remaining === null ? args.seconds : Math.min(args.seconds, remaining)
+  );
+  return deadlinePassed(args.started, args.options, args.clock.now())
+    ? "expired"
+    : "ok";
+}
 type StepResult<V> =
   | { readonly kind: "terminal"; readonly verdict: V }
   | {
@@ -391,24 +416,34 @@ async function pollUntilTerminal<V>(args: {
           retryInSeconds,
         })
       );
-      if (deadlinePassed(started, args.options, args.dependencies.clock.now()))
-        return args.stamp({
-          kind: "TIMEOUT",
-          terminal: true,
-          exitCode: 5,
-          reason: { kind: "status-unavailable", failure: error.failure },
-        });
-      await args.dependencies.clock.sleep(retryInSeconds);
+      const retryTimeout = args.stamp({
+        kind: "TIMEOUT",
+        terminal: true,
+        exitCode: 5,
+        reason: { kind: "status-unavailable", failure: error.failure },
+      });
+      if (
+        (await sleepUntilDeadline({
+          clock: args.dependencies.clock,
+          started,
+          options: args.options,
+          seconds: retryInSeconds,
+        })) === "expired"
+      )
+        return retryTimeout;
       continue;
     }
     if (result.kind === "terminal") return result.verdict;
     if (result.kind === "sleep") {
-      if (
-        result.onDeadline !== undefined &&
-        deadlinePassed(started, args.options, args.dependencies.clock.now())
-      )
+      const expired =
+        (await sleepUntilDeadline({
+          clock: args.dependencies.clock,
+          started,
+          options: args.options,
+          seconds: result.seconds,
+        })) === "expired";
+      if (expired && result.onDeadline !== undefined)
         return result.onDeadline();
-      await args.dependencies.clock.sleep(result.seconds);
     }
   }
 }

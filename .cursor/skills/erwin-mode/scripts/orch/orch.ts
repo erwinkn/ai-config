@@ -265,7 +265,11 @@ function createProgram(io: Io): Command {
       )
     )
     .option("--json", "print complete rows as JSON", false)
-    .option("--force", "steal an existing store lock", false);
+    .option(
+      "--force",
+      "emergency only: steal a live store lock without stopping the holder",
+      false
+    );
 
   leaf(program, "init", "initialize the store").action(() =>
     runStore(

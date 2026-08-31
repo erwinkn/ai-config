@@ -10,6 +10,7 @@ import {
   queryBackoffSeconds,
   readSnapshot,
   runQueued,
+  runSimple,
   selectTierMajorStackDecision,
 } from "./policy.ts";
 import {
@@ -443,4 +444,71 @@ it("uses the specified retry floor and cap", () => {
   expect(queryBackoffSeconds(1, 1)).toBe(60);
   expect(queryBackoffSeconds(1, 2)).toBe(120);
   expect(queryBackoffSeconds(60, 4)).toBe(300);
+});
+
+it("caps a pending-check sleep to the remaining deadline", async () => {
+  const sleeps: number[] = [];
+  let now = 0;
+  const verdict = await runSimple({
+    dependencies: {
+      reader: fakeReader({
+        fastPath: { kind: "checks", checks: [pendingCheck("ci")] },
+      }),
+      clock: {
+        now: () => now,
+        observedAt: () => "2026-07-26T00:00:00.000Z",
+        async sleep(seconds) {
+          sleeps.push(seconds);
+          now += seconds;
+        },
+      },
+      emit() {},
+    },
+    contexts: [context(1)],
+    mode: "single",
+    statusOnly: false,
+    options: { ...options, interval: 10, timeout: 5 },
+  });
+  expect(verdict.kind).toBe("TIMEOUT");
+  if (verdict.kind !== "TIMEOUT") throw new Error("expected TIMEOUT");
+  expect(verdict.reason.kind).toBe("pending-checks");
+  expect(sleeps).toEqual([5]);
+});
+
+it("caps retry backoff to the remaining deadline", async () => {
+  const base = fakeReader();
+  const sleeps: number[] = [];
+  let now = 0;
+  const verdict = await runSimple({
+    dependencies: {
+      reader: {
+        ...base,
+        async pullRequest() {
+          throw new WatcherQueryError({
+            kind: "command-exit",
+            retryable: true,
+            detail: "rate limited",
+            code: 1,
+          });
+        },
+      } satisfies GitHubReader,
+      clock: {
+        now: () => now,
+        observedAt: () => "2026-07-26T00:00:00.000Z",
+        async sleep(seconds) {
+          sleeps.push(seconds);
+          now += seconds;
+        },
+      },
+      emit() {},
+    },
+    contexts: [context(1)],
+    mode: "single",
+    statusOnly: false,
+    options: { ...options, interval: 1, timeout: 30, maxQueryErrors: 5 },
+  });
+  expect(verdict.kind).toBe("TIMEOUT");
+  if (verdict.kind !== "TIMEOUT") throw new Error("expected TIMEOUT");
+  expect(verdict.reason.kind).toBe("status-unavailable");
+  expect(sleeps).toEqual([30]);
 });

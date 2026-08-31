@@ -2,9 +2,12 @@ import { describe, expect, it } from "bun:test";
 import {
   ChecksUnavailable,
   WatcherQueryError,
+  collectReviewThreadNodes,
   mapRollupNode,
   orderStack,
   parsePullRequest,
+  parseReviewThreadNodes,
+  parseReviewThreadPage,
   parseReviewThreads,
   resolveChecks,
   resolveContext,
@@ -435,6 +438,60 @@ it("counts repeated Devin jobs, Amp reviews, and mixed Cursor plus keyless round
     },
   });
   expect(mixed.map((thread) => thread.reviewBotPasses)).toEqual([2, 2]);
+});
+
+it("keeps an unresolved thread that arrives after the first 100 results", async () => {
+  const firstPage = Array.from({ length: 100 }, (_, index) =>
+    reviewThreadNode({
+      id: `resolved-${index}`,
+      author: "human",
+      body: "resolved earlier",
+      resolved: true,
+    })
+  );
+  const hidden = reviewThreadNode({
+    id: "page-two",
+    author: "reviewer",
+    body: "still open after the first page",
+  });
+  const cursors: Array<string | null> = [];
+  const nodes = await collectReviewThreadNodes(async (after) => {
+    cursors.push(after);
+    if (after === null) {
+      return parseReviewThreadPage({
+        data: {
+          repository: {
+            pullRequest: {
+              reviewThreads: {
+                pageInfo: { hasNextPage: true, endCursor: "page-2" },
+                nodes: firstPage,
+              },
+            },
+          },
+        },
+      });
+    }
+    if (after === "page-2") {
+      return parseReviewThreadPage({
+        data: {
+          repository: {
+            pullRequest: {
+              reviewThreads: {
+                pageInfo: { hasNextPage: false, endCursor: null },
+                nodes: [hidden],
+              },
+            },
+          },
+        },
+      });
+    }
+    throw new Error(`unexpected cursor ${after}`);
+  });
+  expect(cursors).toEqual([null, "page-2"]);
+  expect(nodes).toHaveLength(101);
+  expect(parseReviewThreadNodes(nodes).map((thread) => thread.id)).toEqual([
+    "page-two",
+  ]);
 });
 
 describe("context and stack discovery", () => {

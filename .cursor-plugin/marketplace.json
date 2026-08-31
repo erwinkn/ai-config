@@ -10,7 +10,7 @@
 	"plugins": [
 		{
 			"name": "estack",
-			"source": "./",
+			"source": ".cursor",
 			"description": "Private Cursor plugin: erwin-mode, GitHub stacked PRs, cloud coding agents."
 		}
 	]
