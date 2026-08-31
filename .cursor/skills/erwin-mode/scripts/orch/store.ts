@@ -365,16 +365,55 @@ async function requiredFile(path: string): Promise<string> {
   }
 }
 
+function parseLockHolder(contents: string): {
+  readonly pid: string;
+  readonly token: string | null;
+} {
+  const line = contents.trim();
+  if (line.length === 0) return { pid: "unknown", token: null };
+  const [pid, token] = line.split(/\s+/, 2);
+  return { pid: pid ?? "unknown", token: token ?? null };
+}
+
+function lockPid(contents: string): string {
+  return parseLockHolder(contents).pid;
+}
+
 function holderIsDead(holder: string): boolean {
-  const pid = Number.parseInt(holder, 10);
-  if (!Number.isSafeInteger(pid) || pid <= 0 || String(pid) !== holder) {
+  const pid = lockPid(holder);
+  const value = Number.parseInt(pid, 10);
+  if (!Number.isSafeInteger(value) || value <= 0 || String(value) !== pid) {
     return false;
   }
   try {
-    process.kill(pid, 0);
+    process.kill(value, 0);
     return false;
   } catch (error) {
     return errorCode(error) === "ESRCH";
+  }
+}
+
+async function createExclusive(path: string, contents: string): Promise<void> {
+  let handle: Awaited<ReturnType<typeof open>> | undefined;
+  try {
+    handle = await open(path, "wx");
+    await handle.writeFile(contents);
+    await handle.close();
+    handle = undefined;
+  } catch (error) {
+    if (handle !== undefined) {
+      await handle.close().catch(() => undefined);
+      await unlink(path).catch(() => undefined);
+    }
+    throw error;
+  }
+}
+
+async function readLockContents(path: string): Promise<string> {
+  try {
+    return (await readFile(path, "utf8")).trim() || "unknown";
+  } catch {
+    return "unknown";
   }
 }
 
@@ -384,37 +423,28 @@ async function acquireLock(
 ): Promise<() => Promise<void>> {
   const path = join(store, LOCK_FILE);
   const pid = String(process.pid);
+  const token = randomUUID();
+  const payload = `${pid} ${token}\n`;
   const create = async (): Promise<void> => {
-    const handle = await open(path, "wx");
-    await handle.writeFile(`${pid}\n`);
-    await handle.close();
+    await createExclusive(path, payload);
   };
 
   const takeOver = async (expectedHolder: string): Promise<void> => {
     const claim = `${path}.recover`;
     const createClaim = async (): Promise<boolean> => {
       try {
-        const handle = await open(claim, "wx");
-        await handle.writeFile(`${pid}\n`);
-        await handle.close();
+        await createExclusive(claim, payload);
         return true;
       } catch (error) {
         if (errorCode(error) === "EEXIST") return false;
         throw error;
       }
     };
-    const readHolder = async (target: string): Promise<string> => {
-      try {
-        return (await readFile(target, "utf8")).trim() || "unknown";
-      } catch {
-        return "unknown";
-      }
-    };
     let claimed = await createClaim();
     if (!claimed) {
-      const claimHolder = await readHolder(claim);
+      const claimHolder = await readLockContents(claim);
       if (!holderIsDead(claimHolder)) {
-        throw new UserError(`store lock held by pid ${claimHolder}`);
+        throw new UserError(`store lock held by pid ${lockPid(claimHolder)}`);
       }
       try {
         await unlink(claim);
@@ -424,7 +454,7 @@ async function acquireLock(
       claimed = await createClaim();
       if (!claimed) {
         throw new UserError(
-          `store lock held by pid ${await readHolder(claim)}`
+          `store lock held by pid ${lockPid(await readLockContents(claim))}`
         );
       }
     }
@@ -436,7 +466,7 @@ async function acquireLock(
         if (errorCode(error) !== "ENOENT") throw error;
       }
       if (current !== null && current !== expectedHolder) {
-        throw new UserError(`store lock held by pid ${current}`);
+        throw new UserError(`store lock held by pid ${lockPid(current)}`);
       }
       if (current !== null) {
         await unlink(path);
@@ -445,7 +475,7 @@ async function acquireLock(
     } catch (retryError) {
       if (errorCode(retryError) === "EEXIST") {
         throw new UserError(
-          `store lock held by pid ${await readHolder(path)}`
+          `store lock held by pid ${lockPid(await readLockContents(path))}`
         );
       }
       throw retryError;
@@ -464,26 +494,22 @@ async function acquireLock(
     if (errorCode(error) !== "EEXIST") {
       throw error;
     }
-    let holder = "unknown";
-    try {
-      holder = (await readFile(path, "utf8")).trim() || "unknown";
-    } catch {
-      holder = "unknown";
-    }
+    const holder = await readLockContents(path);
     if (holderIsDead(holder)) {
-      options.onStaleLock?.(holder);
+      options.onStaleLock?.(lockPid(holder));
       await takeOver(holder);
     } else if (options.force) {
-      options.onLockStolen?.(holder);
+      options.onLockStolen?.(lockPid(holder));
       await takeOver(holder);
     } else {
-      throw new UserError(`store lock held by pid ${holder}`);
+      throw new UserError(`store lock held by pid ${lockPid(holder)}`);
     }
   }
 
   return async (): Promise<void> => {
     try {
-      if ((await readFile(path, "utf8")).trim() === pid) {
+      const parsed = parseLockHolder(await readFile(path, "utf8"));
+      if (parsed.pid === pid && parsed.token === token) {
         await unlink(path);
       }
     } catch (error) {
@@ -609,9 +635,10 @@ function pointerCells(pointer: InboxPointer): readonly string[] {
   ];
 }
 
-async function readPointers(
-  directory: string
-): Promise<readonly InboxPointer[]> {
+async function snapshotInbox(directory: string): Promise<{
+  readonly files: readonly string[];
+  readonly rows: readonly InboxPointer[];
+}> {
   let entries: Dirent[];
   try {
     entries = await readdir(directory, { withFileTypes: true });
@@ -623,20 +650,21 @@ async function readPointers(
     }
     throw error;
   }
-  const result: InboxPointer[] = [];
   const files = entries
     .filter((entry) => entry.isFile() && entry.name.endsWith(".tsv"))
-    .sort((left, right) => left.name.localeCompare(right.name));
-  for (const entry of files) {
-    const raw = (await readFile(join(directory, entry.name), "utf8")).replace(
+    .map((entry) => entry.name)
+    .sort((left, right) => left.localeCompare(right));
+  const rows: InboxPointer[] = [];
+  for (const name of files) {
+    const raw = (await readFile(join(directory, name), "utf8")).replace(
       /\r?\n$/,
       ""
     );
     const row = raw.split("\t");
     if (/[\r\n]/.test(raw) || row.length !== 5) {
-      throw new UserError(`inbox pointer ${entry.name} is malformed`);
+      throw new UserError(`inbox pointer ${name} is malformed`);
     }
-    result.push({
+    rows.push({
       ts: row[0] ?? "",
       agent: row[1] ?? "",
       unit: row[2] ?? "",
@@ -644,7 +672,13 @@ async function readPointers(
       report: row[4] ?? "",
     });
   }
-  return result;
+  return { files, rows };
+}
+
+async function readPointers(
+  directory: string
+): Promise<readonly InboxPointer[]> {
+  return (await snapshotInbox(directory)).rows;
 }
 
 function renderGates(rows: readonly Gate[]): string {
@@ -1237,70 +1271,83 @@ export function openStore(
     }
   };
 
-  const beginWrite = async (): Promise<void> => {
+  let writeTail: Promise<void> = Promise.resolve();
+  const beginWrite = async <T>(operation: () => Promise<T>): Promise<T> => {
     ensureOpen();
-    if (!(await exists(store))) {
-      throw new UserError(
-        `store is not initialized at ${store}; run orch init`
-      );
+    let release!: () => void;
+    const previous = writeTail;
+    writeTail = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    await previous;
+    try {
+      ensureOpen();
+      if (!(await exists(store))) {
+        throw new UserError(
+          `store is not initialized at ${store}; run orch init`
+        );
+      }
+      await ensureLock();
+      return await operation();
+    } finally {
+      release();
     }
-    await ensureLock();
   };
 
   return {
     units: {
-      add: async (params) => {
-        await beginWrite();
-        const row: Unit = {
-          id: requiredCell(params.id, "unit id"),
-          track: requiredCell(params.track, "track"),
-          state: "pending",
-          branch: "",
-          pr: "",
-          sha: "",
-          brief:
-            params.brief === undefined
-              ? ""
-              : requiredCell(params.brief, "brief"),
-        };
-        const rows = [...(await readUnits(store))];
-        if (rows.some((unit) => unit.id === row.id)) {
-          throw new UserError(`unit ${row.id} already exists`);
-        }
-        rows.push(row);
-        await saveUnits(store, rows);
-        return row;
-      },
-      set: async (params) => {
-        await beginWrite();
-        const id = requiredCell(params.id, "unit id");
-        const state = requiredCell(params.state, "state");
-        const rows = [...(await readUnits(store))];
-        const index = rows.findIndex((unit) => unit.id === id);
-        const old = rows[index];
-        if (index < 0 || old === undefined) {
-          throw new NotFoundError(`unit ${id} not found`);
-        }
-        const row: Unit = {
-          ...old,
-          state,
-          branch:
-            params.branch === undefined
-              ? old.branch
-              : requiredCell(params.branch, "branch"),
-          pr:
-            params.pr === undefined
-              ? old.pr
-              : String(positiveInteger(params.pr, "PR")),
-          sha:
-            params.sha === undefined
-              ? old.sha
-              : requiredCell(params.sha, "SHA"),
-        };
-        rows[index] = row;
-        await saveUnits(store, rows);
-        return row;
-      },
+      add: async (params) =>
+        beginWrite(async () => {
+          const row: Unit = {
+            id: requiredCell(params.id, "unit id"),
+            track: requiredCell(params.track, "track"),
+            state: "pending",
+            branch: "",
+            pr: "",
+            sha: "",
+            brief:
+              params.brief === undefined
+                ? ""
+                : requiredCell(params.brief, "brief"),
+          };
+          const rows = [...(await readUnits(store))];
+          if (rows.some((unit) => unit.id === row.id)) {
+            throw new UserError(`unit ${row.id} already exists`);
+          }
+          rows.push(row);
+          await saveUnits(store, rows);
+          return row;
+        }),
+      set: async (params) =>
+        beginWrite(async () => {
+          const id = requiredCell(params.id, "unit id");
+          const state = requiredCell(params.state, "state");
+          const rows = [...(await readUnits(store))];
+          const index = rows.findIndex((unit) => unit.id === id);
+          const old = rows[index];
+          if (index < 0 || old === undefined) {
+            throw new NotFoundError(`unit ${id} not found`);
+          }
+          const row: Unit = {
+            ...old,
+            state,
+            branch:
+              params.branch === undefined
+                ? old.branch
+                : requiredCell(params.branch, "branch"),
+            pr:
+              params.pr === undefined
+                ? old.pr
+                : String(positiveInteger(params.pr, "PR")),
+            sha:
+              params.sha === undefined
+                ? old.sha
+                : requiredCell(params.sha, "SHA"),
+          };
+          rows[index] = row;
+          await saveUnits(store, rows);
+          return row;
+        }),
       get: async (id) => {
         ensureOpen();
         const cleanId = requiredCell(id, "unit id");
@@ -1336,32 +1383,32 @@ export function openStore(
       },
     },
     ledger: {
-      record: async (params) => {
-        await beginWrite();
-        const verdict = parseVerdict(params.verdict);
-        const row: LedgerEntry = {
-          pr: String(positiveInteger(params.pr, "PR")),
-          sha: requiredCell(params.sha, "SHA"),
-          verdict,
-          evidence: requiredCell(params.evidence, "evidence"),
-          verifier:
-            params.verifier === undefined
-              ? ""
-              : requiredCell(params.verifier, "verifier"),
-          ts: new Date().toISOString(),
-        };
-        const rows = [...(await readLedger(store))];
-        const index = rows.findIndex(
-          (old) => old.pr === row.pr && old.sha === row.sha
-        );
-        if (index < 0) {
-          rows.push(row);
-        } else {
-          rows[index] = row;
-        }
-        await saveLedger(store, rows);
-        return row;
-      },
+      record: async (params) =>
+        beginWrite(async () => {
+          const verdict = parseVerdict(params.verdict);
+          const row: LedgerEntry = {
+            pr: String(positiveInteger(params.pr, "PR")),
+            sha: requiredCell(params.sha, "SHA"),
+            verdict,
+            evidence: requiredCell(params.evidence, "evidence"),
+            verifier:
+              params.verifier === undefined
+                ? ""
+                : requiredCell(params.verifier, "verifier"),
+            ts: new Date().toISOString(),
+          };
+          const rows = [...(await readLedger(store))];
+          const index = rows.findIndex(
+            (old) => old.pr === row.pr && old.sha === row.sha
+          );
+          if (index < 0) {
+            rows.push(row);
+          } else {
+            rows[index] = row;
+          }
+          await saveLedger(store, rows);
+          return row;
+        }),
       check: async (params) => {
         ensureOpen();
         const pr = String(positiveInteger(params.pr, "PR"));
@@ -1385,61 +1432,58 @@ export function openStore(
       },
     },
     inbox: {
-      push: async (params) => {
-        await beginWrite();
-        const pointer: InboxPointer = {
-          ts: new Date().toISOString(),
-          agent: requiredCell(params.agent, "agent"),
-          unit: requiredCell(params.unit, "unit"),
-          status: requiredCell(params.status, "status"),
-          report:
-            params.report === undefined
-              ? ""
-              : requiredCell(params.report, "report"),
-        };
-        const inbox = join(store, "inbox");
-        if (!(await exists(inbox))) {
-          throw new UserError(
-            `store is not initialized at ${store}; run orch init`
-          );
-        }
-        const timestamp = pointer.ts.replace(/[:.]/g, "-");
-        const filename = `${timestamp}-${process.pid}-${randomUUID()}.tsv`;
-        const contents = `${pointerCells(pointer).map(cleanCell).join("\t")}\n`;
-        await atomicWrite(join(inbox, filename), contents);
-        return { pointer, filename };
-      },
-      drain: async () => {
-        await beginWrite();
-        const inbox = join(store, "inbox");
-        const rows = await readPointers(inbox);
-        const files = (await readdir(inbox)).filter((name) =>
-          name.endsWith(".tsv")
-        );
-        if (files.length === 0) return rows;
-        const drained = join(
-          store,
-          `.inbox-drain-${process.pid}-${randomUUID()}`
-        );
-        await mkdir(drained);
-        try {
-          for (const name of files) {
-            await rename(join(inbox, name), join(drained, name));
+      push: async (params) =>
+        beginWrite(async () => {
+          const pointer: InboxPointer = {
+            ts: new Date().toISOString(),
+            agent: requiredCell(params.agent, "agent"),
+            unit: requiredCell(params.unit, "unit"),
+            status: requiredCell(params.status, "status"),
+            report:
+              params.report === undefined
+                ? ""
+                : requiredCell(params.report, "report"),
+          };
+          const inbox = join(store, "inbox");
+          if (!(await exists(inbox))) {
+            throw new UserError(
+              `store is not initialized at ${store}; run orch init`
+            );
           }
-        } catch (error) {
-          for (const name of files) {
-            try {
-              await rename(join(drained, name), join(inbox, name));
-            } catch {
-              // best-effort restore; inbox directory itself stayed put
+          const timestamp = pointer.ts.replace(/[:.]/g, "-");
+          const filename = `${timestamp}-${process.pid}-${randomUUID()}.tsv`;
+          const contents = `${pointerCells(pointer).map(cleanCell).join("\t")}\n`;
+          await atomicWrite(join(inbox, filename), contents);
+          return { pointer, filename };
+        }),
+      drain: async () =>
+        beginWrite(async () => {
+          const inbox = join(store, "inbox");
+          const { files, rows } = await snapshotInbox(inbox);
+          if (files.length === 0) return rows;
+          const drained = join(
+            store,
+            `.inbox-drain-${process.pid}-${randomUUID()}`
+          );
+          await mkdir(drained);
+          try {
+            for (const name of files) {
+              await rename(join(inbox, name), join(drained, name));
             }
+          } catch (error) {
+            for (const name of files) {
+              try {
+                await rename(join(drained, name), join(inbox, name));
+              } catch {
+                // best-effort restore; inbox directory itself stayed put
+              }
+            }
+            await rm(drained, { recursive: true, force: true });
+            throw error;
           }
           await rm(drained, { recursive: true, force: true });
-          throw error;
-        }
-        await rm(drained, { recursive: true, force: true });
-        return rows;
-      },
+          return rows;
+        }),
       peek: async () => {
         ensureOpen();
         return readPointers(join(store, "inbox"));
@@ -1450,86 +1494,86 @@ export function openStore(
       },
     },
     gates: {
-      park: async (params) => {
-        await beginWrite();
-        const gate: OpenGate = {
-          kind: "open",
-          id: requiredLine(params.id, "gate id"),
-          question: requiredLine(params.question, "question"),
-          options: requiredLine(params.options, "options"),
-          defaultAnswer: requiredLine(
-            params.defaultAnswer,
-            "default"
-          ),
-        };
-        const rows = [...(await readGates(store))];
-        const index = rows.findIndex((old) => old.id === gate.id);
-        if (index < 0) {
-          rows.push(gate);
-        } else {
-          rows[index] = gate;
-        }
-        await atomicWrite(join(store, "gates.md"), renderGates(rows));
-        return gate;
-      },
+      park: async (params) =>
+        beginWrite(async () => {
+          const gate: OpenGate = {
+            kind: "open",
+            id: requiredLine(params.id, "gate id"),
+            question: requiredLine(params.question, "question"),
+            options: requiredLine(params.options, "options"),
+            defaultAnswer: requiredLine(
+              params.defaultAnswer,
+              "default"
+            ),
+          };
+          const rows = [...(await readGates(store))];
+          const index = rows.findIndex((old) => old.id === gate.id);
+          if (index < 0) {
+            rows.push(gate);
+          } else {
+            rows[index] = gate;
+          }
+          await atomicWrite(join(store, "gates.md"), renderGates(rows));
+          return gate;
+        }),
       list: async () => {
         ensureOpen();
         return (await readGates(store)).filter(
           (gate): gate is OpenGate => gate.kind === "open"
         );
       },
-      resolve: async (params) => {
-        await beginWrite();
-        const id = requiredLine(params.id, "gate id");
-        const rows = [...(await readGates(store))];
-        const index = rows.findIndex((gate) => gate.id === id);
-        const old = rows[index];
-        if (index < 0 || old === undefined) {
-          throw new NotFoundError(`gate ${id} not found`);
-        }
-        const gate: ResolvedGate = {
-          kind: "resolved",
-          id: old.id,
-          question: old.question,
-          options: old.options,
-          defaultAnswer: old.defaultAnswer,
-          answer: requiredLine(params.answer, "answer"),
-        };
-        rows[index] = gate;
-        await atomicWrite(join(store, "gates.md"), renderGates(rows));
-        return gate;
-      },
+      resolve: async (params) =>
+        beginWrite(async () => {
+          const id = requiredLine(params.id, "gate id");
+          const rows = [...(await readGates(store))];
+          const index = rows.findIndex((gate) => gate.id === id);
+          const old = rows[index];
+          if (index < 0 || old === undefined) {
+            throw new NotFoundError(`gate ${id} not found`);
+          }
+          const gate: ResolvedGate = {
+            kind: "resolved",
+            id: old.id,
+            question: old.question,
+            options: old.options,
+            defaultAnswer: old.defaultAnswer,
+            answer: requiredLine(params.answer, "answer"),
+          };
+          rows[index] = gate;
+          await atomicWrite(join(store, "gates.md"), renderGates(rows));
+          return gate;
+        }),
     },
     frontier: {
-      set: async (params) => {
-        await beginWrite();
-        const repo = resolve(requiredLine(params.repo, "repo directory"));
-        const pin =
-          params.prs === undefined
-            ? undefined
-            : params.prs.map((pr) => positiveInteger(pr, "PR"));
-        if (pin !== undefined && new Set(pin).size !== pin.length) {
-          throw new UserError("--prs must not contain duplicates");
-        }
-        const old = await readFrontier(store);
-        const prs = resolveFrontier(repo);
-        if (pin !== undefined) {
-          validateFrontierPin({
-            actual: prs.map((row) => row.pr),
-            expected: pin,
-          });
-        }
-        const value: Frontier = {
-          generation: old.generation + 1,
-          prs,
-          lowestUnmerged: prs.find((row) => row.state === "OPEN")?.pr ?? null,
-        };
-        await atomicWrite(
-          join(store, "frontier.json"),
-          `${JSON.stringify(value, null, 2)}\n`
-        );
-        return value;
-      },
+      set: async (params) =>
+        beginWrite(async () => {
+          const repo = resolve(requiredLine(params.repo, "repo directory"));
+          const pin =
+            params.prs === undefined
+              ? undefined
+              : params.prs.map((pr) => positiveInteger(pr, "PR"));
+          if (pin !== undefined && new Set(pin).size !== pin.length) {
+            throw new UserError("--prs must not contain duplicates");
+          }
+          const old = await readFrontier(store);
+          const prs = resolveFrontier(repo);
+          if (pin !== undefined) {
+            validateFrontierPin({
+              actual: prs.map((row) => row.pr),
+              expected: pin,
+            });
+          }
+          const value: Frontier = {
+            generation: old.generation + 1,
+            prs,
+            lowestUnmerged: prs.find((row) => row.state === "OPEN")?.pr ?? null,
+          };
+          await atomicWrite(
+            join(store, "frontier.json"),
+            `${JSON.stringify(value, null, 2)}\n`
+          );
+          return value;
+        }),
       show: async () => {
         ensureOpen();
         return readFrontier(store);
@@ -1540,58 +1584,58 @@ export function openStore(
         ensureOpen();
         return readStanding(store);
       },
-      add: async (params) => {
-        await beginWrite();
-        const rows = [...(await readStanding(store))];
-        const item: StandingLine = {
-          number: rows.length + 1,
-          line: requiredLine(params.line, "standing order"),
-        };
-        rows.push(item);
-        await atomicWrite(
-          join(store, "preferences.md"),
-          `${rows.map((row) => `${row.number}. ${row.line}`).join("\n")}\n`
-        );
-        return item;
-      },
+      add: async (params) =>
+        beginWrite(async () => {
+          const rows = [...(await readStanding(store))];
+          const item: StandingLine = {
+            number: rows.length + 1,
+            line: requiredLine(params.line, "standing order"),
+          };
+          rows.push(item);
+          await atomicWrite(
+            join(store, "preferences.md"),
+            `${rows.map((row) => `${row.number}. ${row.line}`).join("\n")}\n`
+          );
+          return item;
+        }),
     },
     status: {
-      render: async () => {
-        await beginWrite();
-        const unitRows = await readUnits(store);
-        const ledgerRows = await readLedger(store);
-        const currentFrontier = await readFrontier(store);
-        const gateRows = await readGates(store);
-        const currentSummary = summarize(
-          unitRows,
-          ledgerRows,
-          currentFrontier,
-          gateRows
-        );
-        const path = join(store, "status.md");
-        const before = (await exists(path))
-          ? previousSummary(await readFile(path, "utf8"))
-          : null;
-        const change = changed(before, currentSummary);
-        await atomicWrite(
-          path,
-          statusMarkdown(
+      render: async () =>
+        beginWrite(async () => {
+          const unitRows = await readUnits(store);
+          const ledgerRows = await readLedger(store);
+          const currentFrontier = await readFrontier(store);
+          const gateRows = await readGates(store);
+          const currentSummary = summarize(
             unitRows,
             ledgerRows,
             currentFrontier,
-            gateRows,
-            currentSummary
-          )
-        );
-        return {
-          units: unitRows,
-          ledger: ledgerRows,
-          frontier: currentFrontier,
-          gates: gateRows,
-          summary: currentSummary,
-          changed: change,
-        };
-      },
+            gateRows
+          );
+          const path = join(store, "status.md");
+          const before = (await exists(path))
+            ? previousSummary(await readFile(path, "utf8"))
+            : null;
+          const change = changed(before, currentSummary);
+          await atomicWrite(
+            path,
+            statusMarkdown(
+              unitRows,
+              ledgerRows,
+              currentFrontier,
+              gateRows,
+              currentSummary
+            )
+          );
+          return {
+            units: unitRows,
+            ledger: ledgerRows,
+            frontier: currentFrontier,
+            gates: gateRows,
+            summary: currentSummary,
+            changed: change,
+          };
+        }),
     },
     init: async () => {
       ensureOpen();

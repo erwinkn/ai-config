@@ -468,6 +468,47 @@ try {
     expect(await readdir(directory)).not.toContain(".orch.lock");
   });
 
+  it("does not let a stolen handle's close unlink the forcer's lock", async () => {
+    const { directory, store } = await initializedStore();
+    await store.units.add({ id: "u1", track: "build" });
+
+    const stolen: string[] = [];
+    const forced = useStore(directory, {
+      force: true,
+      onLockStolen: (holder) => stolen.push(holder),
+    });
+    await forced.units.add({ id: "u2", track: "build" });
+    expect(stolen).toEqual([String(process.pid)]);
+
+    await store.close();
+    const blocked = useStore(directory);
+    await expect(
+      blocked.units.add({ id: "u3", track: "build" })
+    ).rejects.toThrow(`store lock held by pid ${process.pid}`);
+    expect(
+      await forced.units.add({ id: "u4", track: "build" })
+    ).toMatchObject({ id: "u4" });
+    expect((await forced.units.list()).map((unit) => unit.id).sort()).toEqual([
+      "u1",
+      "u2",
+      "u4",
+    ]);
+  });
+
+  it("serializes concurrent writes on one store handle", async () => {
+    const { store } = await initializedStore();
+    await Promise.all([
+      store.units.add({ id: "a", track: "build" }),
+      store.units.add({ id: "b", track: "verify" }),
+      store.units.add({ id: "c", track: "build" }),
+    ]);
+    expect((await store.units.list()).map((unit) => unit.id).sort()).toEqual([
+      "a",
+      "b",
+      "c",
+    ]);
+  });
+
   it("parks gates, stores standing orders, and renders status", async () => {
     const { directory, store } = await initializedStore();
     await store.units.add({ id: "u1", track: "build" });
