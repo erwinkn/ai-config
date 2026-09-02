@@ -4,11 +4,15 @@ function ai {
         [string[]]$Args
     )
 
-    $gitDir = Join-Path $HOME ".ai-config"
-    if (-not (Test-Path -LiteralPath $gitDir)) {
-        Write-Error "Bare AI dotfiles repo not found at $gitDir. Run scripts/setup-windows-ai.ps1 first."
+    $cli = Join-Path $HOME ".config\ai\bin\ai"
+    if (-not (Test-Path -LiteralPath $cli)) {
+        Write-Error "ai CLI not found at $cli. Run scripts/setup-windows-ai.ps1 first."
+        return
+    }
+    if (-not (Get-Command node -ErrorAction SilentlyContinue)) {
+        Write-Error "Node.js 18 or later is required for the ai CLI."
         return
     }
 
-    & git "--git-dir=$gitDir" "--work-tree=$HOME" @Args
+    & node $cli @Args
 }

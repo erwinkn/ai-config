@@ -1,28 +1,128 @@
 {
   "version": 1,
   "skills": {
+    "agent-browser": {
+      "source": "./.agents/skills/agent-browser",
+      "sourceType": "local",
+      "computedHash": "f374522d38047ccd2917c7de7f9140d316751227b1da5deaf2c49bcacfd5f258"
+    },
+    "ai-agents": {
+      "source": "./.agents/skills/ai-agents",
+      "sourceType": "local",
+      "computedHash": "7a9590d962063af30758dee8bd993e5e1c215226eafbc62020fc1b35400c0d7b"
+    },
+    "autoreview": {
+      "source": "openclaw/agent-skills",
+      "sourceType": "github",
+      "skillPath": "skills/autoreview/SKILL.md",
+      "computedHash": "31245d4789e6f37604712efbed966d18bb6439c270799c92416df2f65a3fc155"
+    },
+    "code-quality": {
+      "source": "./.agents/skills/code-quality",
+      "sourceType": "local",
+      "computedHash": "53e3c85056aa98dcc75ccb2db111aadbcabfb7ec8d0e6e9a20517eec678279ac"
+    },
+    "codex-computer-use": {
+      "source": "./.agents/skills/codex-computer-use",
+      "sourceType": "local",
+      "computedHash": "9c8d43104f11c8bf0b431a1c2deb68044e98b9523ce5d520bb595ef608de9380"
+    },
+    "codex-implementation": {
+      "source": "./.agents/skills/codex-implementation",
+      "sourceType": "local",
+      "computedHash": "9721f04b987d2c348e91fb59a57a3c72925dbd86f4d0e70ceb4da86311bf87da"
+    },
+    "codex-review": {
+      "source": "./.agents/skills/codex-review",
+      "sourceType": "local",
+      "computedHash": "c32a235b8726a13e083b86d84e38e648a8f9da98a090dd22d37232aa3a7cab20"
+    },
+    "context7": {
+      "source": "./.agents/skills/context7",
+      "sourceType": "local",
+      "computedHash": "ff8a65a94c29c02e51bb2c3fed9bff865d2804fabe30809e4962cb2133edf9f3"
+    },
+    "decision-audit": {
+      "source": "./.agents/skills/decision-audit",
+      "sourceType": "local",
+      "computedHash": "0723d39d5b5dd9da2617e106269b4687c314f6044f28c520b6388827c0a28612"
+    },
+    "emil-design-eng": {
+      "source": "./.agents/skills/emil-design-eng",
+      "sourceType": "local",
+      "computedHash": "8bdf9e4e6de7a4969147bf4828a4ad2c5aacd9fba4b690b250a85e0467ca387d"
+    },
+    "getsrc": {
+      "source": "./.agents/skills/getsrc",
+      "sourceType": "local",
+      "computedHash": "3f0713e03904bd3701569bbbb3765a80bef1477880ffe5690045aab0b4f9b6e5"
+    },
+    "grill": {
+      "source": "./.agents/skills/grill",
+      "sourceType": "local",
+      "computedHash": "9cf4d52412e1d3fa302d8c8fea39ddcc2d2fc9d77f9cdc679797b6fa37b4f99f"
+    },
+    "handoff": {
+      "source": "openclaw/agent-skills",
+      "sourceType": "github",
+      "skillPath": "skills/handoff/SKILL.md",
+      "computedHash": "7ff33fe030fadfb4a65df2ecd575d515d8791d381a4e9926f9bc33e5cc811801"
+    },
+    "humanizer": {
+      "source": "./.agents/skills/humanizer",
+      "sourceType": "local",
+      "computedHash": "b40b2054a4d1e485d6d35cbc279e7052aface0538d4243b3db999a36b158a8d5"
+    },
+    "i-have-adhd": {
+      "source": "./.agents/skills/i-have-adhd",
+      "sourceType": "local",
+      "computedHash": "5aab2176da51cdfacc8a927b752a6e2b3a47e8999e887c558f8ebce531ba6c06"
+    },
     "impeccable": {
       "source": "pbakaus/impeccable",
       "sourceType": "github",
       "skillPath": ".agents/skills/impeccable/SKILL.md",
       "computedHash": "16180e7175cb29ef050926233b8514d7323294156890e1f1b17024ba8d9dab71"
     },
+    "massive": {
+      "source": "./.agents/skills/massive",
+      "sourceType": "local",
+      "computedHash": "b970cb89cc653cb7d0b03bd0aa751d44660cde9c69187371012fcde0bbec11e7"
+    },
     "mobbin-search": {
       "source": "mobbin/skills",
       "sourceType": "github",
       "computedHash": "1f01cf85e7786cfb38c8519f7739bdc2d41747c925ba6a237e7bdf4ce4ca5d8e"
     },
-    "handoff": {
-      "source": "openclaw/agent-skills",
-      "sourceType": "github",
-      "skillPath": "skills/handoff/SKILL.md",
-      "computedHash": "31de4e6b3496f3306d87333a3f9a4ca1d55517949cac653f644aa4276f3a35db"
+    "review-animations": {
+      "source": "./.agents/skills/review-animations",
+      "sourceType": "local",
+      "computedHash": "ca04aaa0a815f05e0910ded8fedbfbdfe0acdec8f52dfbb88277890070d134d4"
     },
-    "autoreview": {
-      "source": "openclaw/agent-skills",
-      "sourceType": "github",
-      "skillPath": "skills/autoreview/SKILL.md",
-      "computedHash": "7f9d45be16badfdd74beb42172dc5a4adc515d4ee2e79b8273fc3a1efb983c06"
+    "reviewable-pr": {
+      "source": "./.agents/skills/reviewable-pr",
+      "sourceType": "local",
+      "computedHash": "6a19cec07e1fb019b75d491fed61e09f6488d52081f561aefd57bcdd2487b756"
+    },
+    "talon": {
+      "source": "./.agents/skills/talon",
+      "sourceType": "local",
+      "computedHash": "93be773b5618efb3ab5d3fc2ee4cccd79b779b3f3cc462f37692008aa67eecab"
+    },
+    "thermo-nuclear-code-quality-review": {
+      "source": "./.agents/skills/thermo-nuclear-code-quality-review",
+      "sourceType": "local",
+      "computedHash": "9052b01b46b1d8dbf94c45f9313ec1983443f9a460e83d49cdc7fe0f640ca476"
+    },
+    "tradingview": {
+      "source": "./.agents/skills/tradingview",
+      "sourceType": "local",
+      "computedHash": "25da13ad11f1e47cfbf3fa51a6c7e5033a574878756ab1d33ea160c1d55834df"
+    },
+    "use-railway": {
+      "source": "./.agents/skills/use-railway",
+      "sourceType": "local",
+      "computedHash": "38d7e06c20f08b576589aa8e8f25d36b9bf9c232069e5d6772cd3a586ffeb7e4"
     },
     "vercel-composition-patterns": {
       "source": "vercel-labs/agent-skills",

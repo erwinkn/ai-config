@@ -1,10 +1,12 @@
 __pycache__/
 
-# Effective agent configuration and skills are generated from shared and local layers.
+# Generated active Claude and Codex settings.
 /.claude/settings.json
 /.codex/config.toml
-/.agents/skills/
+
+# Device-local skill manager lock. Skills themselves are tracked.
 /.agents/.skill-lock.json
-/.claude/skills/
-/.config/ai-config/local/
-/.config/ai-config/node_modules/
+
+# Device-local config overlays and CLI deps.
+/.config/ai/local/
+/.config/ai/node_modules/
