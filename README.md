@@ -28,20 +28,35 @@ Windows: `scripts/setup-windows-ai.ps1` installs the bare mirror and the `ai`
 PowerShell function. Node 18+ is required so Windows `ai` matches macOS.
 Git goes through `ai git`.
 
+## Personal agent instructions
+
+Canonical file, meant for a synced home (`~` on a laptop or a cloud VM),
+not for this repository as a project:
+
+```text
+~/.agents/AGENTS.md
+```
+
+Hosts that do not read that path get a stub in their own discovery slot:
+
+```text
+~/.claude/CLAUDE.md    # @../.agents/AGENTS.md
+~/.codex/AGENTS.md     # symlink -> ../.agents/AGENTS.md
+~/.claude/skills       # symlink -> ../.agents/skills
+```
+
+No `~/AGENTS.md` or `~/CLAUDE.md`. Those would sit at the filesystem root
+of `$HOME` and Claude would walk-load `~/CLAUDE.md` into every project.
+
+Cursor still does not load `~/.agents/AGENTS.md` as user rules. Put a copy
+in Cursor User Rules, or rely on Claude/Codex on that machine.
+
 ## Skills
 
 Tracked agent skills:
 
 ```text
 ~/.agents/skills/<name>/
-```
-
-Claude aliases, not a second copy:
-
-```text
-~/CLAUDE.md            -> AGENTS.md
-~/.claude/CLAUDE.md    -> ../AGENTS.md
-~/.claude/skills       -> ../.agents/skills
 ```
 
 `skills-lock.json` at the repo root is the vercel-labs/skills lock for those
