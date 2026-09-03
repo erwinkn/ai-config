@@ -2,13 +2,13 @@ name: BB config
 on:
   pull_request:
     paths:
-      - ".config/ai-config/**"
+      - ".config/ai/**"
       - ".github/workflows/bb-config.yml"
       - "docs/bb-config.md"
   push:
     branches: [main]
     paths:
-      - ".config/ai-config/**"
+      - ".config/ai/**"
       - ".github/workflows/bb-config.yml"
 permissions:
   contents: read
@@ -24,8 +24,8 @@ jobs:
         with:
           node-version: "${{ matrix.node }}"
           cache: npm
-          cache-dependency-path: .config/ai-config/package-lock.json
+          cache-dependency-path: .config/ai/package-lock.json
       - run: npm ci
-        working-directory: .config/ai-config
+        working-directory: .config/ai
       - run: npm test
-        working-directory: .config/ai-config
+        working-directory: .config/ai

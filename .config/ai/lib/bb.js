@@ -349,7 +349,7 @@ function main(args) {
   );
   const root =
     process.env.AI_CONFIG_HOME ??
-    path.join(os.homedir(), ".config", "ai-config");
+    path.join(os.homedir(), ".config", "ai");
   const config = desired(root);
   const run = client(config.cliPath ?? process.env.BB_CLI ?? "bb");
   const execute = () => {
@@ -384,7 +384,7 @@ function main(args) {
   if (command !== "apply") return execute();
   const state =
     process.env.AI_CONFIG_STATE_HOME ??
-    path.join(os.homedir(), ".local", "state", "ai-config");
+    path.join(os.homedir(), ".local", "state", "ai");
   fs.mkdirSync(state, { recursive: true });
   const lock = path.join(state, "bb-apply.lock");
   let fd;

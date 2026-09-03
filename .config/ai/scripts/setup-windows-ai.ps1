@@ -49,8 +49,8 @@ function Backup-ConflictingTrackedFiles {
 }
 
 function Sync-LocalProfileSnippet {
-    $repoRoot = (Resolve-Path (Join-Path $PSScriptRoot "..")).Path
-    $sourcePath = Join-Path $repoRoot ".config\ai\profile.ps1"
+    $configDir = (Resolve-Path (Join-Path $PSScriptRoot "..")).Path
+    $sourcePath = Join-Path $configDir "profile.ps1"
     $targetPath = Join-Path $WorkTree ".config\ai\profile.ps1"
 
     if (-not (Test-Path -LiteralPath $sourcePath -PathType Leaf)) {

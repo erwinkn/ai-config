@@ -22,9 +22,9 @@ jobs:
         with:
           node-version: ${{ matrix.node }}
           cache: npm
-          cache-dependency-path: .config/ai-config/package-lock.json
+          cache-dependency-path: .config/ai/package-lock.json
       - run: npm ci --ignore-scripts --no-audit --no-fund
-        working-directory: .config/ai-config
-      - run: bash -n setup .config/ai-config/bin/setup-unix .config/ai-config/bin/setup-macos
+        working-directory: .config/ai
+      - run: bash -n .config/ai/bin/setup-unix .config/ai/bin/setup-macos
       - run: npm test
-        working-directory: .config/ai-config
+        working-directory: .config/ai

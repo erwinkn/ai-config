@@ -6,7 +6,7 @@ function ai {
 
     $cli = Join-Path $HOME ".config\ai\bin\ai"
     if (-not (Test-Path -LiteralPath $cli)) {
-        Write-Error "ai CLI not found at $cli. Run scripts/setup-windows-ai.ps1 first."
+        Write-Error "ai CLI not found at $cli. Run .config/ai/scripts/setup-windows-ai.ps1 first."
         return
     }
     if (-not (Get-Command node -ErrorAction SilentlyContinue)) {
