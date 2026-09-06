@@ -28,3 +28,13 @@ jobs:
       - run: bash -n .config/ai/bin/setup-unix .config/ai/bin/setup-macos
       - run: npm test
         working-directory: .config/ai
+
+  windows-setup:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - shell: pwsh
+        run: .config/ai/test/windows-setup.test.ps1

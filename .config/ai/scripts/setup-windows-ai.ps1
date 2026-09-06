@@ -1,7 +1,8 @@
 param(
     [string]$GitDir = (Join-Path $HOME ".ai-config"),
     [string]$WorkTree = $HOME,
-    [string]$RepoUrl = "https://github.com/erwinkn/ai-config.git"
+    [string]$RepoUrl = "https://github.com/erwinkn/ai-config.git",
+    [string]$ProfilePath = $PROFILE.CurrentUserAllHosts
 )
 
 $ErrorActionPreference = "Stop"
@@ -68,6 +69,31 @@ function Sync-LocalProfileSnippet {
     }
 }
 
+function Assert-SymbolicLinks {
+    $probe = Join-Path ([IO.Path]::GetTempPath()) ([guid]::NewGuid().ToString())
+    New-Item -ItemType Directory -Path $probe | Out-Null
+    try {
+        $target = Join-Path $probe "target"
+        Set-Content -LiteralPath $target -Value "probe"
+        New-Item -ItemType SymbolicLink -Path (Join-Path $probe "link") -Target $target | Out-Null
+    }
+    catch { throw "Setup requires symbolic links. Enable Windows Developer Mode or use an elevated PowerShell session, then retry." }
+    finally { Remove-Item -LiteralPath $probe -Recurse -Force }
+}
+
+function Register-AiProfile {
+    $snippet = Join-Path $WorkTree ".config/ai/profile.ps1"
+    $line = ". '" + $snippet.Replace("'", "''") + "'"
+    if (Test-Path -LiteralPath $ProfilePath) {
+        if ((Get-Content -LiteralPath $ProfilePath) -contains $line) { return }
+        $backup = Join-Path $WorkTree (".local/state/ai-config/profile-backup-" + [guid]::NewGuid().ToString() + ".ps1")
+        Copy-Item -LiteralPath $ProfilePath -Destination $backup
+    }
+    New-Item -ItemType Directory -Path (Split-Path -Parent $ProfilePath) -Force | Out-Null
+    Add-Content -LiteralPath $ProfilePath -Value "`n# Load the ai command`n$line" -Encoding utf8
+    Write-Host "Start a new PowerShell session, or run: $line"
+}
+
 if (-not (Get-Command git -ErrorAction SilentlyContinue)) {
     throw "git is required but was not found on PATH."
 }
@@ -94,7 +120,9 @@ function Invoke-InstallStep([string]$Step) {
 try {
     Invoke-InstallStep acquire
     $locked = $true
+    Assert-SymbolicLinks
     if (Test-Path -LiteralPath $GitDir) {
+        Invoke-AiGit config core.symlinks true
         Invoke-AiGit remote set-url origin $RepoUrl
         Invoke-AiGit fetch
         $installationTarget = Invoke-AiGit rev-parse 'FETCH_HEAD'
@@ -106,6 +134,7 @@ try {
     if (-not (Test-Path -LiteralPath $GitDir)) {
         & git clone --bare $RepoUrl $GitDir
         if ($LASTEXITCODE -ne 0) { throw "Git clone failed." }
+        Invoke-AiGit config core.symlinks true
         $backup = Backup-ConflictingTrackedFiles
         Invoke-AiGit checkout
     }
@@ -128,6 +157,7 @@ try {
     & node (Join-Path $WorkTree ".config/ai/bin/ai") capture
     if ($LASTEXITCODE -ne 0) { throw "Configuration capture failed." }
     Invoke-AiGit config status.showUntrackedFiles no
+    Register-AiProfile
     Invoke-InstallStep complete
     Write-Host "AI installation version 1 is ready at $WorkTree"
     if ($backup -and $backup.Files.Count -gt 0) {
