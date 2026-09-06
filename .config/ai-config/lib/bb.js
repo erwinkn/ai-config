@@ -22,7 +22,7 @@ const experiments = new Set([
 ]);
 const identifier = /^[a-z][a-z0-9-]*$/;
 const gitSource =
-  /^git:https:\/\/github\.com\/[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+\.git@[a-f0-9]{40}$/;
+  /^git:https:\/\/github\.com\/[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+\.git@(?:[a-f0-9]{40}|main)$/;
 
 function check(condition, message) {
   if (!condition) throw new Error(message);
@@ -134,7 +134,7 @@ function validate(value, local = false) {
       check(
         plugin.source === `builtin:${id}` ||
           (typeof plugin.source === "string" && gitSource.test(plugin.source)),
-        "Plugin source must be builtin:<id> or a GitHub HTTPS URL pinned to a full commit SHA",
+        "Plugin source must be builtin:<id> or a GitHub HTTPS URL with a full commit SHA or main",
       );
       if (plugin.subdirectory !== undefined) {
         check(
@@ -195,6 +195,7 @@ function makePlan(config, run) {
   const operations = [];
   const blockers = [];
   const observed = [];
+  const trackingPlugins = [];
   for (const [section, liveKey, command] of [
     ["general", "generalSettings", "general"],
     ["experiments", "experiments", "experiment"],
@@ -241,6 +242,22 @@ function makePlan(config, run) {
         typeof source.requested === "string",
         "BB plugin source is missing",
       );
+      if (
+        wanted.source.endsWith("@main") &&
+        source.requested === wanted.source
+      ) {
+        check(
+          typeof source.resolved === "string" && source.resolved.length > 0,
+          "BB resolved plugin source is missing",
+        );
+        observed.push(["resolved", id, source.resolved]);
+        trackingPlugins.push({
+          id,
+          requested: source.requested,
+          resolved: source.resolved,
+          updateCommand: `bb plugin update ${id}`,
+        });
+      }
       observed.push([
         "plugin",
         id,
@@ -307,6 +324,7 @@ function makePlan(config, run) {
     .digest("hex");
   return {
     token,
+    trackingPlugins,
     operations,
     blockers,
     unmanagedPlugins: installed.plugins
