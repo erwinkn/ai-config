@@ -10,11 +10,11 @@ running BB server. The public command contract was checked with BB 0.42.1.
 From this checkout, on macOS or Linux:
 
 ```sh
-export AI_CONFIG_HOME="$PWD/.config/ai-config"
-node .config/ai-config/bin/ai bb status
-node .config/ai-config/bin/ai bb plan
-node .config/ai-config/bin/ai bb apply --expect <token-from-plan>
-node .config/ai-config/bin/ai bb status
+export AI_CONFIG_HOME="$PWD/.config/ai"
+node .config/ai/bin/ai bb status
+node .config/ai/bin/ai bb plan
+node .config/ai/bin/ai bb apply --expect <token-from-plan>
+node .config/ai/bin/ai bb status
 ```
 
 Replace `<token-from-plan>` with the `token` value in the reviewed plan. Plan
@@ -39,16 +39,16 @@ values in plan output or the shared manifest.
 
 ## Shared and local intent
 
-The tracked source is `.config/ai-config/shared/bb.json`. It contains only
+The tracked source is `.config/ai/shared/bb.json`. It contains only
 selected non-secret preferences, instruction text, and the desired plugin
 inventory. Edit this file and review its Git diff before publication. There
 is no automatic export from live BB.
 
-Machine overrides go in the ignored `.config/ai-config/local/bb.json`:
+Machine overrides go in the ignored `.config/ai/local/bb.json`:
 
 ```sh
 mkdir -p "$AI_CONFIG_HOME/local"
-cp .config/ai-config/examples/bb.local.json "$AI_CONFIG_HOME/local/bb.json"
+cp .config/ai/examples/bb.local.json "$AI_CONFIG_HOME/local/bb.json"
 ```
 
 Edit the example before use. Remove `cliPath` to use BB's normal CLI. Each
@@ -160,7 +160,7 @@ shortcuts, or theme files. Use the relevant public BB command for those
 settings where available; no unsupported write is inferred.
 
 Apply uses a lock in `AI_CONFIG_STATE_HOME`, or
-`~/.local/state/ai-config/bb-apply.lock`. It prevents concurrent runs that use
+`~/.local/state/ai/bb-apply.lock`. It prevents concurrent runs that use
 the same state directory. It does not lock BB's UI or other clients. Do not
 edit selected settings during apply. BB does not offer an atomic transaction
 across these commands. If a command fails, earlier changes can remain. Fix
@@ -171,7 +171,7 @@ apply process is running before removing a stale lock.
 ## Validation and Linux use
 
 ```sh
-cd .config/ai-config
+cd .config/ai
 npm ci
 npm test
 ```

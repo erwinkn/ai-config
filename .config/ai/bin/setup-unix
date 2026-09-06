@@ -1,0 +1,308 @@
+#!/bin/bash
+
+set -euo pipefail
+
+platform=$(uname -s)
+case "$platform" in
+    Darwin|Linux) ;;
+    *) echo "setup: supported systems are macOS and Linux." >&2; exit 1 ;;
+esac
+
+script_dir=$(CDPATH='' cd -- "$(dirname -- "$0")" && pwd)
+source_root=$(git -C "$script_dir" rev-parse --show-toplevel)
+ai_git_dir=${AI_CONFIG_GIT_DIR:-"$HOME/.ai-config"}
+ai_work_tree=${AI_CONFIG_WORK_TREE:-"$HOME"}
+timestamp=$(date -u +%Y%m%dT%H%M%SZ)
+backup_root="$HOME/.local/state/ai/backups/$timestamp"
+temporary_root=$(mktemp -d "${TMPDIR:-/tmp}/ai-setup.XXXXXX")
+captured_root="$temporary_root/config"
+captured_active_root="$temporary_root/active"
+restore_active_on_error=0
+
+home_git() {
+    git -C "$ai_work_tree" --git-dir="$ai_git_dir" \
+        --work-tree="$ai_work_tree" "$@"
+}
+
+cleanup() {
+    if [[ ${installation_locked:-0} -eq 1 ]]; then
+        node "$script_dir/../lib/install.js" release
+    fi
+    rm -rf "$temporary_root"
+}
+
+restore_active() {
+    local relative
+    for relative in \
+        .claude/settings.json \
+        .codex/config.toml \
+        .agents/.skill-lock.json; do
+        if [[ -e "$backup_root/$relative" || -L "$backup_root/$relative" ]]; then
+            mkdir -p "$(dirname "$HOME/$relative")"
+            rm -rf "$HOME/$relative"
+            cp -pR "$backup_root/$relative" "$HOME/$relative"
+        fi
+    done
+}
+
+on_error() {
+    local exit_code=$?
+    if [[ $restore_active_on_error -eq 1 ]]; then
+        restore_active
+        echo "setup: restored the active configuration after an error." >&2
+    fi
+    exit "$exit_code"
+}
+
+trap cleanup EXIT
+trap on_error ERR
+
+ensure_node() {
+    if command -v node >/dev/null 2>&1 \
+        && command -v npm >/dev/null 2>&1 \
+        && [[ $(node -p 'Number(process.versions.node.split(".")[0])') -ge 18 ]]; then
+        return
+    fi
+    if [[ "$platform" == Darwin ]] && command -v brew >/dev/null 2>&1; then
+        echo "Installing Node.js with Homebrew ..."
+        brew install node
+        return
+    fi
+    echo "setup: Node.js 18 or later and npm are required." >&2
+    if [[ "$platform" == Darwin ]]; then
+        echo "Install Node.js, or install Homebrew and run this command again." >&2
+    else
+        echo "Install Node.js and npm, then run this command again." >&2
+    fi
+    exit 1
+}
+
+install_dependencies() {
+    local directory=$1
+    (
+        cd "$directory"
+        npm ci --omit=dev --ignore-scripts --no-audit --no-fund
+    )
+}
+
+backup_file() {
+    local source=$1
+    local relative=$2
+    if [[ ! -e "$source" && ! -L "$source" ]]; then
+        return
+    fi
+    local destination="$backup_root/$relative"
+    mkdir -p "$(dirname "$destination")"
+    if [[ -e "$destination" || -L "$destination" ]]; then
+        return
+    fi
+    cp -pR "$source" "$destination"
+}
+
+capture_active_configuration() {
+    mkdir -p "$captured_root/shared"
+    cp "$source_root/.config/ai/shared/claude.json" \
+        "$captured_root/shared/claude.json"
+    cp "$source_root/.config/ai/shared/codex.toml" \
+        "$captured_root/shared/codex.toml"
+    # Seed existing pins and snapshots before capturing direct active edits.
+    if [[ -d "$HOME/.config/ai/local" ]]; then
+        cp -pR "$HOME/.config/ai/local" "$captured_root/local"
+    fi
+    if [[ -d "$HOME/.local/state/ai/last-rendered" ]]; then
+        mkdir -p "$temporary_root/state"
+        cp -pR "$HOME/.local/state/ai/last-rendered" "$temporary_root/state/last-rendered"
+    fi
+    local found=0
+    if [[ -e "$HOME/.claude/settings.json" ]]; then
+        backup_file "$HOME/.claude/settings.json" ".claude/settings.json"
+        mkdir -p "$captured_active_root/.claude"
+        cp "$HOME/.claude/settings.json" \
+            "$captured_active_root/.claude/settings.json"
+        found=1
+    fi
+    if [[ -e "$HOME/.codex/config.toml" ]]; then
+        backup_file "$HOME/.codex/config.toml" ".codex/config.toml"
+        mkdir -p "$captured_active_root/.codex"
+        cp "$HOME/.codex/config.toml" \
+            "$captured_active_root/.codex/config.toml"
+        found=1
+    fi
+    if [[ -e "$HOME/.agents/.skill-lock.json" ]]; then
+        backup_file "$HOME/.agents/.skill-lock.json" ".agents/.skill-lock.json"
+    fi
+    if [[ $found -eq 1 ]]; then
+        AI_CONFIG_HOME="$captured_root" \
+        AI_CONFIG_ACTIVE_HOME="$captured_active_root" \
+        AI_CONFIG_STATE_HOME="$temporary_root/state" \
+            "$source_root/.config/ai/bin/ai" capture >/dev/null
+    fi
+}
+
+restore_skill_lock() {
+    if [[ ! -e "$backup_root/.agents/.skill-lock.json" \
+        && ! -L "$backup_root/.agents/.skill-lock.json" ]]; then
+        return
+    fi
+    mkdir -p "$HOME/.agents"
+    rm -f "$HOME/.agents/.skill-lock.json"
+    cp -pR "$backup_root/.agents/.skill-lock.json" \
+        "$HOME/.agents/.skill-lock.json"
+}
+
+backup_checkout_conflicts() {
+    local expected="$temporary_root/expected"
+    local relative target
+    while IFS= read -r -d '' relative; do
+        target="$ai_work_tree/$relative"
+        if [[ ! -e "$target" && ! -L "$target" ]]; then
+            continue
+        fi
+        git --git-dir="$ai_git_dir" show "HEAD:$relative" > "$expected"
+        if [[ -f "$target" && ! -L "$target" ]] && cmp -s "$expected" "$target"; then
+            continue
+        fi
+        if [[ -L "$target" ]] && [[ $(cat "$expected") == "$(readlink "$target")" ]]; then
+            continue
+        fi
+        backup_file "$target" "$relative"
+        rm -rf "$target"
+    done < <(git --git-dir="$ai_git_dir" ls-tree -rz --name-only HEAD)
+}
+
+add_path_entry() {
+    local relative=$1
+    local profile="$HOME/$relative"
+    local marker="# Added by ai-config setup"
+    if [[ -f "$profile" ]] && grep -Fq "$marker" "$profile"; then
+        return
+    fi
+    backup_file "$profile" "$relative"
+    {
+        printf '\n%s\n' "$marker"
+        printf '%s\n' 'case ":$PATH:" in'
+        printf '%s\n' '    *":$HOME/.local/bin:"*) ;;'
+        printf '%s\n' '    *) export PATH="$HOME/.local/bin:$PATH" ;;'
+        printf '%s\n' 'esac'
+    } >> "$profile"
+}
+
+install_path_entry() {
+    if [[ "$platform" == Darwin ]]; then
+        add_path_entry .zprofile
+        return
+    fi
+    case "${SHELL:-/bin/sh}" in
+        */zsh)
+            add_path_entry .zprofile
+            add_path_entry .zshrc
+            ;;
+        */bash)
+            # Bash reads only the first existing login profile.
+            if [[ -f "$HOME/.bash_profile" ]]; then
+                add_path_entry .bash_profile
+            elif [[ -f "$HOME/.bash_login" ]]; then
+                add_path_entry .bash_login
+            else
+                add_path_entry .profile
+            fi
+            add_path_entry .bashrc
+            ;;
+        */sh|*/dash|*/ksh) add_path_entry .profile ;;
+        *) echo 'Add ~/.local/bin to PATH in your shell startup file.' ;;
+    esac
+}
+
+install_wrapper() {
+    local name=$1
+    local target="$HOME/.config/ai/bin/$name"
+    local link="$HOME/.local/bin/$name"
+    mkdir -p "$HOME/.local/bin"
+    if [[ -L "$link" && $(readlink "$link") == "$target" ]]; then
+        return
+    fi
+    backup_file "$link" ".local/bin/$name"
+    rm -f "$link"
+    ln -s "$target" "$link"
+}
+
+ensure_node
+node "$script_dir/../lib/install.js" acquire
+installation_locked=1
+# Validate and pin the incoming commit before migration moves any active files.
+if [[ -d "$ai_git_dir" ]]; then
+    home_git fetch
+    installation_target=$(home_git rev-parse 'FETCH_HEAD')
+    if [[ $(home_git show "$installation_target:.config/ai/install-version") != "1" ]]; then
+        echo "setup: the incoming layout requires a different setup release." >&2
+        exit 1
+    fi
+fi
+node "$script_dir/../lib/install.js" prepare
+node "$script_dir/../lib/install.js" beforeCheckout
+install_dependencies "$source_root/.config/ai"
+capture_active_configuration
+
+if [[ ! -d "$ai_git_dir" ]]; then
+    git clone --bare "$source_root" "$ai_git_dir"
+    origin_url=$(git -C "$source_root" remote get-url origin 2>/dev/null || true)
+    if [[ -n "$origin_url" ]]; then
+        git --git-dir="$ai_git_dir" remote set-url origin "$origin_url"
+    fi
+    backup_checkout_conflicts
+    home_git checkout
+else
+    if [[ ! -f "$ai_git_dir/HEAD" ]]; then
+        echo "setup: $ai_git_dir exists but is not a Git repository." >&2
+        exit 1
+    fi
+    restore_active_on_error=1
+    for relative in \
+        .claude/settings.json \
+        .codex/config.toml \
+        .agents/.skill-lock.json; do
+        if home_git ls-files --error-unmatch "$relative" \
+            >/dev/null 2>&1; then
+            home_git checkout -- "$relative"
+        fi
+    done
+    home_git merge --ff-only "$installation_target"
+fi
+
+mkdir -p "$HOME/.config/ai/local"
+for name in claude.json codex.toml; do
+    if [[ -e "$captured_root/local/$name" ]]; then
+        backup_file "$HOME/.config/ai/local/$name" \
+            ".config/ai/local/$name"
+        cp "$captured_root/local/$name" "$HOME/.config/ai/local/$name"
+        chmod 600 "$HOME/.config/ai/local/$name"
+    fi
+done
+
+restore_skill_lock
+node "$script_dir/../lib/install.js" restore
+
+install_wrapper ai
+install_path_entry
+
+install_dependencies "$HOME/.config/ai"
+AI_CONFIG_INSTALLING=1 "$HOME/.config/ai/bin/ai" capture
+restore_active_on_error=0
+
+git --git-dir="$ai_git_dir" config status.showUntrackedFiles no
+mkdir -p "$HOME/.config/git"
+touch "$HOME/.config/git/ignore"
+if ! grep -Fqx '**/.claude/settings.local.json' "$HOME/.config/git/ignore"; then
+    printf '%s\n' '**/.claude/settings.local.json' >> "$HOME/.config/git/ignore"
+fi
+
+node "$script_dir/../lib/install.js" complete
+
+echo
+echo "Setup is complete. Start a new shell, then use:"
+echo "  ai status"
+echo "  ai sync"
+echo "  ai git status"
+if [[ -d "$backup_root" ]]; then
+    echo "Existing files were copied to: $backup_root"
+fi

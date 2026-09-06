@@ -1,0 +1,13 @@
+{
+  "name": "ai",
+  "private": true,
+  "scripts": {
+    "test": "node --test test/*.test.js"
+  },
+  "dependencies": {
+    "smol-toml": "1.7.1"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}
