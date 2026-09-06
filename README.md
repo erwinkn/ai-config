@@ -1,9 +1,13 @@
 # AI configuration
 
 This repository stores shared Claude, Codex, Cursor, and agent configuration.
-It also stores the setup needed to install the configuration on a Mac.
+It also stores the setup needed to install the configuration on macOS or Linux.
 
-## Set up a Mac
+## Set up macOS or Linux
+
+Install Git and Bash first. On Linux, also install Node.js 18 or later and
+npm with your preferred package manager. Setup does not run a Linux package
+manager or use `sudo`.
 
 Clone the repository and run the setup command:
 
@@ -15,17 +19,39 @@ cd ~/Code/ai-config
 
 The command:
 
-- installs Node.js through Homebrew when Node.js 18 or later is missing;
+- on macOS, installs Node.js through Homebrew when Node.js 18 or later is missing;
 - creates the bare home mirror at `~/.ai-config`;
 - installs the `ai` command in `~/.local/bin`;
 - preserves existing files in `~/.local/state/ai-config/backups`;
 - captures existing Claude and Codex values and skills as device-local data;
 - renders the active Claude and Codex configuration files and skill packages; and
-- adds `~/.local/bin` to `PATH` through `~/.zprofile`.
+- adds `~/.local/bin` to the shell startup files described below.
+
+On macOS, setup keeps the existing `~/.zprofile` behavior. On Linux, it uses
+`$SHELL` to select startup files:
+
+| Shell | Startup files |
+| --- | --- |
+| Bash | First existing file of `~/.bash_profile`, `~/.bash_login`, or `~/.profile`; also `~/.bashrc` |
+| Zsh | `~/.zprofile` and `~/.zshrc` |
+| sh, dash, ksh, or unset `$SHELL` | `~/.profile` |
+| Other shells | Setup prints a request to add `~/.local/bin` to `PATH` manually |
+
+If no Bash login profile exists, setup creates `~/.profile`. Start a new shell
+after setup, or use `~/.local/bin/ai` directly. Custom shell startup files that
+exit early can prevent the appended `PATH` entry from running.
+
+The previous `.config/ai-config/bin/setup-macos` entry point is still available
+for macOS. `./setup` supports macOS and Linux.
 
 The setup does not install Claude Code, ChatGPT, or other external tools.
 The `ai` command is a JavaScript program. It uses the pinned `smol-toml`
 package to read and write Codex configuration.
+
+Shared settings can contain device-specific paths and external integrations.
+Setup preserves those values. On Linux, use the local layer to set paths and
+disable tools that are not available on that device. Setup does not install
+or validate the external tools named in shared settings.
 
 ## Configuration layers
 
@@ -214,3 +240,15 @@ ai git config --list
 ```
 
 Use `ai git pull` only when you need a raw Git pull without capture or apply.
+
+## Test setup and configuration tools
+
+```sh
+npm ci --prefix .config/ai-config --ignore-scripts --no-audit --no-fund
+npm test --prefix .config/ai-config
+```
+
+Setup tests use temporary repositories and home directories. They run real
+Git, npm, Node.js, and Bash commands; npm needs registry access. Platform tests
+replace `uname` to check both platform branches. CI runs the suite on real
+Linux and macOS runners with Node.js 18 and 22.
