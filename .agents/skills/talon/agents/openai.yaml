@@ -1,4 +1,0 @@
-interface:
-  display_name: "Talon"
-  short_description: "Turn Talon posts into TradingView workspaces"
-  default_prompt: "Use $talon to turn this Talon weekly post into a structured TradingView watchlist with levels."

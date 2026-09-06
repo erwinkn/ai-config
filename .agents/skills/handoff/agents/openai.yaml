@@ -1,6 +1,5 @@
 interface:
   display_name: "Handoff"
-  short_description: "Prepare a portable prompt for another agent"
-  default_prompt: "Use $handoff to prepare a review-first prompt for another agent."
+  short_description: "Compact a conversation into a handoff"
 policy:
   allow_implicit_invocation: false
