@@ -13,6 +13,7 @@ function Invoke-AiGit {
     )
 
     & git "--git-dir=$GitDir" "--work-tree=$WorkTree" @Args
+    if ($LASTEXITCODE -ne 0) { throw "Git failed: $Args" }
 }
 
 function Backup-ConflictingTrackedFiles {
@@ -62,33 +63,82 @@ function Sync-LocalProfileSnippet {
         New-Item -ItemType Directory -Path $targetDir -Force | Out-Null
     }
 
-    Copy-Item -LiteralPath $sourcePath -Destination $targetPath -Force
+    if ([IO.Path]::GetFullPath($sourcePath) -ne [IO.Path]::GetFullPath($targetPath)) {
+        Copy-Item -LiteralPath $sourcePath -Destination $targetPath -Force
+    }
 }
 
 if (-not (Get-Command git -ErrorAction SilentlyContinue)) {
     throw "git is required but was not found on PATH."
 }
 
-if (-not (Test-Path -LiteralPath $GitDir)) {
-    & git clone --bare $RepoUrl $GitDir
+if (-not (Get-Command node -ErrorAction SilentlyContinue) -or
+    -not (Get-Command npm -ErrorAction SilentlyContinue)) {
+    throw "Node.js 18 or later and npm are required."
 }
-else {
-    & git "--git-dir=$GitDir" remote set-url origin $RepoUrl
-    & git "--git-dir=$GitDir" fetch origin
+$nodeMajor = & node -p 'parseInt(process.versions.node)'
+if ($LASTEXITCODE -ne 0 -or [int]$nodeMajor -lt 18) { throw "Node.js 18 or later is required." }
+
+$installer = Join-Path $PSScriptRoot "../lib/install.js"
+$previousWorkTree = $env:AI_CONFIG_WORK_TREE
+$previousInstalling = $env:AI_CONFIG_INSTALLING
+$previousConfigHome = $env:AI_CONFIG_HOME
+$previousActiveHome = $env:AI_CONFIG_ACTIVE_HOME
+$previousStateHome = $env:AI_CONFIG_STATE_HOME
+$env:AI_CONFIG_WORK_TREE = $WorkTree
+$locked = $false
+function Invoke-InstallStep([string]$Step) {
+    & node $installer $Step
+    if ($LASTEXITCODE -ne 0) { throw "Installation step failed: $Step" }
 }
-
-Invoke-AiGit config status.showUntrackedFiles no
-$backup = Backup-ConflictingTrackedFiles
-Invoke-AiGit checkout
-Sync-LocalProfileSnippet
-
-Write-Host "AI dotfiles bare repo is installed at $GitDir"
-if ($backup.Files.Count -gt 0) {
-    Write-Host "Backed up conflicting files to $($backup.Root):"
-    foreach ($file in $backup.Files) {
-        Write-Host "  $file"
+try {
+    Invoke-InstallStep acquire
+    $locked = $true
+    if (Test-Path -LiteralPath $GitDir) {
+        Invoke-AiGit remote set-url origin $RepoUrl
+        Invoke-AiGit fetch
+        $installationTarget = Invoke-AiGit rev-parse 'FETCH_HEAD'
+        $requiredVersion = Invoke-AiGit show "${installationTarget}:.config/ai/install-version"
+        if ($requiredVersion.Trim() -ne "1") { throw "The incoming layout requires a different setup release." }
+    }
+    Invoke-InstallStep prepare
+    Invoke-InstallStep beforeCheckout
+    if (-not (Test-Path -LiteralPath $GitDir)) {
+        & git clone --bare $RepoUrl $GitDir
+        if ($LASTEXITCODE -ne 0) { throw "Git clone failed." }
+        $backup = Backup-ConflictingTrackedFiles
+        Invoke-AiGit checkout
+    }
+    else {
+        Invoke-AiGit merge --ff-only $installationTarget
+        $backup = $null
+    }
+    Invoke-InstallStep restore
+    Sync-LocalProfileSnippet
+    Push-Location (Join-Path $WorkTree ".config/ai")
+    try {
+        & npm ci --omit=dev --ignore-scripts --no-audit --no-fund
+        if ($LASTEXITCODE -ne 0) { throw "Dependency installation failed." }
+    }
+    finally { Pop-Location }
+    $env:AI_CONFIG_INSTALLING = "1"
+    $env:AI_CONFIG_HOME = Join-Path $WorkTree ".config/ai"
+    $env:AI_CONFIG_ACTIVE_HOME = $WorkTree
+    $env:AI_CONFIG_STATE_HOME = Join-Path $WorkTree ".local/state/ai"
+    & node (Join-Path $WorkTree ".config/ai/bin/ai") capture
+    if ($LASTEXITCODE -ne 0) { throw "Configuration capture failed." }
+    Invoke-AiGit config status.showUntrackedFiles no
+    Invoke-InstallStep complete
+    Write-Host "AI installation version 1 is ready at $WorkTree"
+    if ($backup -and $backup.Files.Count -gt 0) {
+        Write-Host "Backed up conflicting files to $($backup.Root)"
     }
 }
-else {
-    Write-Host "No conflicting tracked files needed backup."
+finally {
+    if ($locked) { Invoke-InstallStep release }
+    $env:AI_CONFIG_WORK_TREE = $previousWorkTree
+    $env:AI_CONFIG_INSTALLING = $previousInstalling
+    $env:AI_CONFIG_HOME = $previousConfigHome
+    $env:AI_CONFIG_ACTIVE_HOME = $previousActiveHome
+    $env:AI_CONFIG_STATE_HOME = $previousStateHome
 }

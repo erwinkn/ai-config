@@ -25,6 +25,9 @@ home_git() {
 }
 
 cleanup() {
+    if [[ ${installation_locked:-0} -eq 1 ]]; then
+        node "$script_dir/../lib/install.js" release
+    fi
     rm -rf "$temporary_root"
 }
 
@@ -102,6 +105,14 @@ capture_active_configuration() {
         "$captured_root/shared/claude.json"
     cp "$source_root/.config/ai/shared/codex.toml" \
         "$captured_root/shared/codex.toml"
+    # Seed existing pins and snapshots before capturing direct active edits.
+    if [[ -d "$HOME/.config/ai/local" ]]; then
+        cp -pR "$HOME/.config/ai/local" "$captured_root/local"
+    fi
+    if [[ -d "$HOME/.local/state/ai/last-rendered" ]]; then
+        mkdir -p "$temporary_root/state"
+        cp -pR "$HOME/.local/state/ai/last-rendered" "$temporary_root/state/last-rendered"
+    fi
     local found=0
     if [[ -e "$HOME/.claude/settings.json" ]]; then
         backup_file "$HOME/.claude/settings.json" ".claude/settings.json"
@@ -216,6 +227,19 @@ install_wrapper() {
 }
 
 ensure_node
+node "$script_dir/../lib/install.js" acquire
+installation_locked=1
+# Validate and pin the incoming commit before migration moves any active files.
+if [[ -d "$ai_git_dir" ]]; then
+    home_git fetch
+    installation_target=$(home_git rev-parse 'FETCH_HEAD')
+    if [[ $(home_git show "$installation_target:.config/ai/install-version") != "1" ]]; then
+        echo "setup: the incoming layout requires a different setup release." >&2
+        exit 1
+    fi
+fi
+node "$script_dir/../lib/install.js" prepare
+node "$script_dir/../lib/install.js" beforeCheckout
 install_dependencies "$source_root/.config/ai"
 capture_active_configuration
 
@@ -242,7 +266,7 @@ else
             home_git checkout -- "$relative"
         fi
     done
-    home_git pull --ff-only
+    home_git merge --ff-only "$installation_target"
 fi
 
 mkdir -p "$HOME/.config/ai/local"
@@ -256,12 +280,13 @@ for name in claude.json codex.toml; do
 done
 
 restore_skill_lock
+node "$script_dir/../lib/install.js" restore
 
 install_wrapper ai
 install_path_entry
 
 install_dependencies "$HOME/.config/ai"
-"$HOME/.config/ai/bin/ai" capture
+AI_CONFIG_INSTALLING=1 "$HOME/.config/ai/bin/ai" capture
 restore_active_on_error=0
 
 git --git-dir="$ai_git_dir" config status.showUntrackedFiles no
@@ -270,6 +295,8 @@ touch "$HOME/.config/git/ignore"
 if ! grep -Fqx '**/.claude/settings.local.json' "$HOME/.config/git/ignore"; then
     printf '%s\n' '**/.claude/settings.local.json' >> "$HOME/.config/git/ignore"
 fi
+
+node "$script_dir/../lib/install.js" complete
 
 echo
 echo "Setup is complete. Start a new shell, then use:"

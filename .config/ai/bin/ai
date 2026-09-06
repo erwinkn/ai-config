@@ -839,14 +839,27 @@ function runGit(args, { capture = false } = {}) {
 }
 
 function main() {
+  if (!process.env.AI_CONFIG_HOME && process.env.AI_CONFIG_INSTALLING !== "1") {
+    require("../lib/install").check();
+  }
   const [command, ...args] = process.argv.slice(2);
   switch (command) {
     case "bb":
       return require("../lib/bb").main(args);
     case "sync": {
+      if (args.length) throw new ConfigError("ai sync takes no arguments. Use ai git for custom Git operations.");
       return withConfigLock(() => {
         adopt({ quiet: true });
-        const result = runGit(["pull", "--ff-only", ...args]);
+        const fetched = runGit(["fetch"]);
+        if (fetched !== 0) return fetched;
+        const target = runGit(["rev-parse", "FETCH_HEAD"], { capture: true });
+        if (target.status !== 0) return target.status;
+        const commit = target.stdout.trim();
+        const incoming = runGit(["show", `${commit}:.config/ai/install-version`], { capture: true });
+        if (incoming.status !== 0 || incoming.stdout.trim() !== String(require("../lib/install").VERSION)) {
+          throw new ConfigError("The incoming installation layout requires setup. Run setup from an updated source checkout before syncing.");
+        }
+        const result = runGit(["merge", "--ff-only", commit]);
         if (result !== 0) return result;
         render();
         return 0;
