@@ -46,7 +46,7 @@
       "source": "builtin:secrets"
     },
     "erwin-devin": {
-      "source": "git:https://github.com/erwinkn/bb-plugins.git@38f03b9f57a4fd4c4e18ecc972870ac1380c837c",
+      "source": "git:https://github.com/erwinkn/bb-plugins.git@main",
       "subdirectory": "plugins/devin"
     }
   }

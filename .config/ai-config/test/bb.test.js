@@ -34,7 +34,7 @@ else if (args[0] === 'settings') {
 else if (args[1] === 'source') result = s.sources[args[2]];
 else if (args[1] === 'install') {
  s.plugins.push({id: 'sample', enabled: true});
- s.sources.sample = {requested: args[2], subdirectory: args.includes('--plugin') && args[args.indexOf('--plugin') + 1] === 'sample' ? 'plugins/sample' : null};
+ s.sources.sample = {requested: args[2], resolved: "installed-commit-a", subdirectory: args.includes('--plugin') && args[args.indexOf('--plugin') + 1] === 'sample' ? 'plugins/sample' : null};
 } else if (args[1] === 'enable') s.plugins.find(p => p.id === args[2]).enabled = true;
 else if (args[1] === 'config' && args.length === 3) result = {schema:{instructions:{type:'string'}},values:{instructions:s.instructions}};
 else if (args[1] === 'config') s.instructions = args[5];
@@ -277,7 +277,10 @@ test("shared inventory is portable and excludes runtime data", () => {
 test("disabled desired plugin is enabled without changing its source", (t) => {
   const f = fixture(t);
   f.state.plugins.push({ id: "sample", enabled: false });
-  f.state.sources.sample = { requested: pin, subdirectory: "plugins/sample" };
+  f.state.sources.sample = {
+    requested: f.config.plugins.sample.source,
+    subdirectory: "plugins/sample",
+  };
   f.save();
   const plan = JSON.parse(f.run("plan").stdout);
   assert.ok(
@@ -327,4 +330,80 @@ test("instruction text stays literal and active files stay untouched", (t) => {
       fs.readFileSync(path.join(f.root, file), "utf8"),
       "preserve byte for byte",
     );
+});
+
+test("main installs with the plugin selector and reports the resolved source", (t) => {
+  const f = fixture(t);
+  f.config.plugins.sample.source = pin.replace(/@[a-f0-9]{40}$/, "@main");
+  f.save();
+  const preview = f.run("plan");
+  assert.equal(preview.status, 0, preview.stderr);
+  const result = f.run("apply", "--expect", JSON.parse(preview.stdout).token);
+  assert.equal(result.status, 0, result.stderr);
+  const plan = JSON.parse(f.run("plan").stdout);
+  assert.deepEqual(plan.operations, []);
+  assert.deepEqual(plan.trackingPlugins, [
+    {
+      id: "sample",
+      requested: f.config.plugins.sample.source,
+      resolved: "installed-commit-a",
+      updateCommand: "bb plugin update sample",
+    },
+  ]);
+  assert.ok(!f.calls().some((a) => a[1] === "update" || a[1] === "outdated"));
+});
+
+test("a main plugin update invalidates the preview without automatic updates", (t) => {
+  const f = fixture(t);
+  f.config.plugins.sample.source = pin.replace(/@[a-f0-9]{40}$/, "@main");
+  f.state.plugins.push({ id: "sample", enabled: true });
+  f.state.sources.sample = {
+    requested: f.config.plugins.sample.source,
+    resolved: "commit-a",
+    subdirectory: "plugins/sample",
+  };
+  f.save();
+  const plan = JSON.parse(f.run("plan").stdout);
+  f.state.sources.sample.resolved = "commit-b";
+  f.save();
+  const result = f.run("apply", "--expect", plan.token);
+  assert.equal(result.status, 1);
+  assert.match(result.stderr, /plan changed/);
+  assert.deepEqual(f.read(), f.state);
+  assert.ok(!f.calls().some((a) => a[1] === "update"));
+});
+
+test("main requires resolved state and still blocks an existing pinned source", (t) => {
+  const f = fixture(t);
+  f.config.plugins.sample.source = pin.replace(/@[a-f0-9]{40}$/, "@main");
+  f.state.plugins.push({ id: "sample", enabled: true });
+  f.state.sources.sample = {
+    requested: f.config.plugins.sample.source,
+    subdirectory: "plugins/sample",
+  };
+  f.save();
+  assert.equal(f.run("plan").status, 1);
+  f.state.sources.sample.requested = pin;
+  f.state.sources.sample.resolved = "commit-a";
+  f.save();
+  const result = f.run("plan");
+  assert.equal(result.status, 2);
+  assert.equal(JSON.parse(result.stdout).blockers.length, 1);
+  assert.deepEqual(JSON.parse(result.stdout).trackingPlugins, []);
+  assert.deepEqual(f.read(), f.state);
+});
+
+test("moving refs other than main remain unsupported", () => {
+  for (const ref of ["develop", "latest", "v1.0.0", "main;echo", "../main"]) {
+    assert.throws(
+      () =>
+        validate({
+          version: 1,
+          plugins: {
+            sample: { source: pin.replace(/@[a-f0-9]{40}$/, `@${ref}`) },
+          },
+        }),
+      /Plugin source/,
+    );
+  }
 });

@@ -70,13 +70,14 @@ accidental config-file import from becoming an apply operation.
 
 Each desired plugin has an ID and a `source`. Built-in sources use
 `builtin:<id>` and follow the installed BB release. Git sources must use
-`git:https://github.com/<owner>/<repo>.git@<full-40-character-commit-SHA>`.
+`git:https://github.com/<owner>/<repo>.git@<full-40-character-commit-SHA>`
+or `git:https://github.com/<owner>/<repo>.git@main`. The Devin entry tracks
+`main`. Other branch names remain unsupported.
 Git repositories must expose a `.bb/plugins.json` entry whose name matches
 the desired ID. Install uses `--plugin <id>`, the verified Devin install
 form. `subdirectory` records the expected resolved directory; the final
-state check verifies it. Branch names, moving
-tags, local source paths, embedded credentials, and parent-directory paths
-are rejected. Keep credentials for the private repository in the host's Git
+state check verifies it. Moving tags, local source paths, embedded
+credentials, and parent-directory paths are rejected. Keep credentials for the private repository in the host's Git
 credential system. The workflow does not install or copy credentials.
 
 Every inventory entry means desired enabled state; disabled intent is not
@@ -85,10 +86,33 @@ disabled is enabled.
 BB enables new plugins by default. Plugin code has full trust, so review the
 source commit before apply. Source conflicts stop the entire apply. Use
 `bb plugin source <id> --json` to inspect a conflict. If replacement is
-intended, run the documented `bb plugin install` command for that exact
-source yourself, then make a new plan. No plugin is automatically updated,
-disabled, removed, or replaced. Removing an entry from the manifest only
+intended, review BB's source-change procedure first. BB documents removal
+and a fresh install for a pinned source change; removal deletes plugin
+settings, secrets, and schedules. Do not use removal as an automatic upgrade.
+A local null override can leave an existing pin unmanaged until migration.
+Make a new plan after any manual source change. No plugin is automatically
+updated, disabled, removed, or replaced. Removing an entry from the manifest only
 stops management of it.
+
+For a new install, `@main` selects the branch at install time. It does not
+pin the code reviewed during plan. For an installed `@main` source, plan
+shows `trackingPlugins` with the installed resolved commit and an update
+command. The plan token changes if that resolved value changes. Plan does
+not fetch the remote branch or claim that the installed commit is latest.
+To check and apply a later compatible branch update explicitly:
+
+```sh
+bb plugin outdated --json
+bb plugin update erwin-devin
+```
+
+Then run `ai bb plan` again. `ai bb apply` does not update an installed
+tracking plugin. BB checks release compatibility, so an incompatible newest
+commit can be blocked. To install the desired source on a fresh BB server:
+
+```sh
+bb plugin install git:https://github.com/erwinkn/bb-plugins.git@main --plugin erwin-devin
+```
 
 The inventory is a selected baseline, not a copy of all installed plugins.
 It excludes the Hello test plugin and the old Devin branding plugins.
