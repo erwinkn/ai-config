@@ -130,7 +130,9 @@ function validate(value, local = false) {
     for (const [id, plugin] of Object.entries(value.plugins)) {
       check(identifier.test(id), "Invalid plugin ID");
       if (local && plugin === null) continue; // Unmanage on this host; never disable.
-      keys(plugin, ["source", "subdirectory"], "plugin");
+      keys(plugin, ["source", "subdirectory", "enabled"], "plugin");
+      if (plugin.enabled !== undefined)
+        check(typeof plugin.enabled === "boolean", "Plugin enabled must be boolean");
       check(
         plugin.source === `builtin:${id}` ||
           (typeof plugin.source === "string" && gitSource.test(plugin.source)),
@@ -231,6 +233,8 @@ function makePlan(config, run) {
     const current = matches[0];
     if (!current) {
       observed.push(["plugin", id, null]);
+      // An absent plugin already satisfies disabled intent; do not install code.
+      if (wanted.enabled === false) continue;
       const args = ["plugin", "install", wanted.source];
       if (gitSource.test(wanted.source)) args.push("--plugin", id);
       args.push("--yes");
@@ -272,15 +276,18 @@ function makePlan(config, run) {
         blockers.push(
           `Plugin ${id} has a different source. Review it with bb plugin source ${id}; change it manually or add a local null override.`,
         );
-      } else if (!current.enabled)
-        operations.push({ kind: "enable", id, args: ["plugin", "enable", id] });
+      } else if (current.enabled !== (wanted.enabled ?? true)) {
+        const kind = wanted.enabled === false ? "disable" : "enable";
+        operations.push({ kind, id, args: ["plugin", kind, id] });
+      }
     }
   }
   if (config.instructions !== undefined) {
     check(
       config.plugins["custom-instructions"]?.source ===
-        "builtin:custom-instructions",
-      "instructions requires the custom-instructions plugin in the desired inventory",
+        "builtin:custom-instructions" &&
+        config.plugins["custom-instructions"].enabled !== false,
+      "instructions requires an enabled custom-instructions plugin in the desired inventory",
     );
     const current = installed.plugins.find(
       (p) => p.id === "custom-instructions",

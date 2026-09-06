@@ -48,6 +48,18 @@
     "erwin-devin": {
       "source": "git:https://github.com/erwinkn/bb-plugins.git@main",
       "subdirectory": "plugins/devin"
+    },
+    "erwin-provider-usage": {
+      "source": "git:https://github.com/erwinkn/bb-plugins.git@main",
+      "subdirectory": "plugins/provider-usage"
+    },
+    "provider-pi": {
+      "source": "builtin:provider-pi",
+      "enabled": false
+    },
+    "provider-usage": {
+      "source": "builtin:provider-usage",
+      "enabled": false
     }
   }
 }

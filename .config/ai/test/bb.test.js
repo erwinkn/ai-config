@@ -36,6 +36,7 @@ else if (args[1] === 'install') {
  s.plugins.push({id: 'sample', enabled: true});
  s.sources.sample = {requested: args[2], resolved: "installed-commit-a", subdirectory: args.includes('--plugin') && args[args.indexOf('--plugin') + 1] === 'sample' ? 'plugins/sample' : null};
 } else if (args[1] === 'enable') s.plugins.find(p => p.id === args[2]).enabled = true;
+else if (args[1] === 'disable') s.plugins.find(p => p.id === args[2]).enabled = false;
 else if (args[1] === 'config' && args.length === 3) result = {schema:{instructions:{type:'string'}},values:{instructions:s.instructions}};
 else if (args[1] === 'config') s.instructions = args[5];
 else process.exit(4);
@@ -217,7 +218,7 @@ test("reject hostile manifests before BB runs; do not print input secrets", (t) 
     },
     { plugins: { sample: { source: pin, subdirectory: "../escape" } } },
     { plugins: { sample: { source: "$(touch /tmp/unsafe)" } } },
-    { plugins: { sample: { source: pin, enabled: false } } },
+    { plugins: { sample: { source: pin, enabled: "false" } } },
     JSON.parse('{"__proto__":{"polluted":true}}'),
     { cliPath: "/tmp/not-shared" },
   ];
@@ -406,4 +407,72 @@ test("moving refs other than main remain unsupported", () => {
       /Plugin source/,
     );
   }
+});
+
+test("explicit disabled intent preserves plugins and converges without installs", (t) => {
+  for (const enabled of [undefined, false, true]) {
+    const f = fixture(t);
+    f.config.plugins.sample.enabled = false;
+    if (enabled !== undefined) {
+      f.state.plugins.push({ id: "sample", enabled });
+      f.state.sources.sample = { requested: pin, subdirectory: "plugins/sample" };
+    }
+    f.save();
+    const preview = f.run("plan");
+    assert.equal(preview.status, 0, preview.stderr);
+    const plan = JSON.parse(preview.stdout);
+    assert.equal(plan.operations.filter(o => o.kind === "disable").length, enabled === true ? 1 : 0);
+    const applied = f.run("apply", "--expect", plan.token);
+    assert.equal(applied.status, 0, applied.stderr);
+    assert.equal(f.read().plugins.find(p => p.id === "sample")?.enabled, enabled === undefined ? undefined : false);
+    assert.deepEqual(f.read().sources, f.state.sources);
+    assert.ok(!f.calls().some(a => ["install", "remove", "enable"].includes(a[1])));
+    assert.deepEqual(JSON.parse(f.run("plan").stdout).operations, []);
+  }
+});
+
+test("disabled intent checks sources and stale state before any write", (t) => {
+  const f = fixture(t);
+  f.config.plugins.sample.enabled = false;
+  f.state.plugins.push({ id: "sample", enabled: true });
+  f.state.sources.sample = { requested: pin, subdirectory: "plugins/sample" };
+  f.save();
+  const plan = JSON.parse(f.run("plan").stdout);
+  f.state.plugins.find(p => p.id === "sample").enabled = false;
+  f.save();
+  const stale = f.run("apply", "--expect", plan.token);
+  assert.equal(stale.status, 1);
+  assert.match(stale.stderr, /plan changed/);
+  assert.deepEqual(f.read(), f.state);
+  f.state.sources.sample.requested = "path:/private/plugin";
+  f.save();
+  const conflict = f.run("plan");
+  assert.equal(conflict.status, 2);
+  const blocked = JSON.parse(conflict.stdout);
+  assert.equal(blocked.blockers.length, 1);
+  assert.equal(f.run("apply", "--expect", blocked.token).status, 1);
+  assert.deepEqual(f.read(), f.state);
+});
+
+test("local null leaves a shared disabled plugin unmanaged", (t) => {
+  const f = fixture(t);
+  f.config.plugins.sample.enabled = false;
+  f.state.plugins.push({ id: "sample", enabled: true });
+  f.save();
+  fs.writeFileSync(path.join(f.root, "local/bb.json"), JSON.stringify({plugins: {sample: null}}));
+  const preview = f.run("plan");
+  assert.equal(preview.status, 0, preview.stderr);
+  const plan = JSON.parse(preview.stdout);
+  assert.ok(plan.unmanagedPlugins.includes("sample"));
+  assert.ok(!plan.operations.some(o => o.id === "sample"));
+});
+
+test("instruction text cannot target a disabled instruction plugin", (t) => {
+  const f = fixture(t);
+  f.config.plugins["custom-instructions"].enabled = false;
+  f.save();
+  const result = f.run("plan");
+  assert.equal(result.status, 1);
+  assert.match(result.stderr, /requires an enabled custom-instructions/);
+  assert.deepEqual(f.read(), f.state);
 });

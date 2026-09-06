@@ -71,7 +71,7 @@ accidental config-file import from becoming an apply operation.
 Each desired plugin has an ID and a `source`. Built-in sources use
 `builtin:<id>` and follow the installed BB release. Git sources must use
 `git:https://github.com/<owner>/<repo>.git@<full-40-character-commit-SHA>`
-or `git:https://github.com/<owner>/<repo>.git@main`. The Devin entry tracks
+or `git:https://github.com/<owner>/<repo>.git@main`. The Devin and provider usage entries track
 `main`. Other branch names remain unsupported.
 Git repositories must expose a `.bb/plugins.json` entry whose name matches
 the desired ID. Install uses `--plugin <id>`, the verified Devin install
@@ -80,9 +80,13 @@ state check verifies it. Moving tags, local source paths, embedded
 credentials, and parent-directory paths are rejected. Keep credentials for the private repository in the host's Git
 credential system. The workflow does not install or copy credentials.
 
-Every inventory entry means desired enabled state; disabled intent is not
-supported. Missing plugins are installed. A listed plugin that is currently
-disabled is enabled.
+Plugin entries default to enabled. Set `"enabled": false` to keep an installed
+plugin disabled. A missing plugin with disabled intent stays absent; apply does
+not install it. Source conflicts still block changes, including disable
+operations. Missing enabled plugins are installed; installed plugins are enabled
+or disabled to match the manifest. Local null overrides still mean unmanaged.
+The shared inventory disables Pi and the built-in provider usage plugin, and
+enables `erwin-provider-usage` from `main`.
 BB enables new plugins by default. Plugin code has full trust, so review the
 source commit before apply. Source conflicts stop the entire apply. Use
 `bb plugin source <id> --json` to inspect a conflict. If replacement is
@@ -91,7 +95,8 @@ and a fresh install for a pinned source change; removal deletes plugin
 settings, secrets, and schedules. Do not use removal as an automatic upgrade.
 A local null override can leave an existing pin unmanaged until migration.
 Make a new plan after any manual source change. No plugin is automatically
-updated, disabled, removed, or replaced. Removing an entry from the manifest only
+updated, removed, or replaced. Disabling requires explicit `"enabled": false`
+in the manifest and a reviewed apply plan. Removing an entry from the manifest only
 stops management of it.
 
 For a new install, `@main` selects the branch at install time. It does not
