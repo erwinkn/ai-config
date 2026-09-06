@@ -1,0 +1,13 @@
+{
+  "version": 1,
+  "cliPath": "/usr/local/bin/bb",
+  "general": {
+    "steerActiveThreadOnEnter": false
+  },
+  "experiments": {
+    "mobileApp": false
+  },
+  "plugins": {
+    "connect": null
+  }
+}

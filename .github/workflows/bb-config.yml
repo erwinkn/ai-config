@@ -1,0 +1,31 @@
+name: BB config
+on:
+  pull_request:
+    paths:
+      - ".config/ai-config/**"
+      - ".github/workflows/bb-config.yml"
+      - "docs/bb-config.md"
+  push:
+    branches: [main]
+    paths:
+      - ".config/ai-config/**"
+      - ".github/workflows/bb-config.yml"
+permissions:
+  contents: read
+jobs:
+  linux:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        node: [18, 22]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "${{ matrix.node }}"
+          cache: npm
+          cache-dependency-path: .config/ai-config/package-lock.json
+      - run: npm ci
+        working-directory: .config/ai-config
+      - run: npm test
+        working-directory: .config/ai-config

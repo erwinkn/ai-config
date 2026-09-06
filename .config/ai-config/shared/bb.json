@@ -1,0 +1,53 @@
+{
+  "version": 1,
+  "general": {
+    "showKeyboardHints": true,
+    "steerActiveThreadOnEnter": true,
+    "showUnhandledProviderEvents": false,
+    "streamerMode": false,
+    "managedBranchPrefix": "bb/"
+  },
+  "experiments": {
+    "mobileApp": true
+  },
+  "instructions": "Write all user-facing prose in ASD-STE100 Simplified Technical English. Do not change source code, identifiers, commands, quotations, or logs to meet this rule.",
+  "plugins": {
+    "ask-user-question": {
+      "source": "builtin:ask-user-question"
+    },
+    "automations": {
+      "source": "builtin:automations"
+    },
+    "connect": {
+      "source": "builtin:connect"
+    },
+    "custom-instructions": {
+      "source": "builtin:custom-instructions"
+    },
+    "inline-vis": {
+      "source": "builtin:inline-vis"
+    },
+    "provider-acp": {
+      "source": "builtin:provider-acp"
+    },
+    "provider-claude-code": {
+      "source": "builtin:provider-claude-code"
+    },
+    "provider-codex": {
+      "source": "builtin:provider-codex"
+    },
+    "provider-retry": {
+      "source": "builtin:provider-retry"
+    },
+    "push-notifications": {
+      "source": "builtin:push-notifications"
+    },
+    "secrets": {
+      "source": "builtin:secrets"
+    },
+    "erwin-devin": {
+      "source": "git:https://github.com/erwinkn/bb-plugins.git@ad232b74b4184bcc8141d898317e2328711eaae1",
+      "subdirectory": "plugins/devin"
+    }
+  }
+}
