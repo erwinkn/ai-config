@@ -98,17 +98,20 @@ for (const platform of ["Linux", "Darwin"]) {
 for (const profile of [".profile", ".bash_profile", ".bash_login"]) {
   test(`Linux Bash uses ${profile} and interactive PATH without duplicates`, (t) => {
     const f = fixture(t, "Linux");
-    write(f.home, profile, "# Existing user profile\n");
+    write(f.home, profile, "printf 'Login startup message\\n'\n");
+    write(f.home, ".bashrc", "printf 'Interactive startup message\\n'\n");
     setup(f);
-    const loginShell = run(f, "bash", ["--login", "-c", "command -v ai"]);
-    assert.equal(loginShell.stdout.trim(), path.join(f.home, ".local/bin/ai"));
+    // Keep command results separate from host and user startup messages.
+    run(f, "bash", ["--login", "-c", 'command -v ai > "$HOME/login-ai"']);
+    assert.equal(text(f, "login-ai").trim(), path.join(f.home, ".local/bin/ai"));
     // Source twice to check the PATH guard as well as normal login above.
-    const login = run(f, "bash", ["--noprofile", "--norc", "-c",
-      `. "$HOME/${profile}"; . "$HOME/${profile}"; command -v ai; printf '%s\\n' "$PATH"`]);
-    assert.equal(login.stdout.trim().split("\n")[0], path.join(f.home, ".local/bin/ai"));
-    assert.equal(login.stdout.trim().split("\n")[1].split(":").filter(p => p === path.join(f.home, ".local/bin")).length, 1);
-    const interactive = run(f, "bash", ["--noprofile", "--rcfile", path.join(f.home, ".bashrc"), "-ic", "command -v ai"]);
-    assert.equal(interactive.stdout.trim(), path.join(f.home, ".local/bin/ai"));
+    run(f, "bash", ["--noprofile", "--norc", "-c",
+      `. "$HOME/${profile}"; . "$HOME/${profile}"; command -v ai > "$HOME/repeated-ai"; printf '%s\\n' "$PATH" > "$HOME/repeated-path"`]);
+    assert.equal(text(f, "repeated-ai").trim(), path.join(f.home, ".local/bin/ai"));
+    assert.equal(text(f, "repeated-path").trim().split(":").filter(p => p === path.join(f.home, ".local/bin")).length, 1);
+    run(f, "bash", ["--noprofile", "--rcfile", path.join(f.home, ".bashrc"), "-ic",
+      'command -v ai > "$HOME/interactive-ai"']);
+    assert.equal(text(f, "interactive-ai").trim(), path.join(f.home, ".local/bin/ai"));
   });
 }
 
