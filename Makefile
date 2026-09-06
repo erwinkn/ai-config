@@ -1,9 +1,9 @@
-SHELL := /bin/zsh
+SHELL := /bin/sh
 
 .PHONY: sync-home publish
 
 sync-home:
-	@zsh -ic 'ai sync'
+	@"$$HOME/.local/bin/ai" sync
 
 publish:
 	@if [ -z "$(MSG)" ]; then \
@@ -13,4 +13,4 @@ publish:
 	@git add -A
 	@git commit -m "$(MSG)"
 	@git push
-	@zsh -ic 'ai sync'
+	@"$$HOME/.local/bin/ai" sync
