@@ -307,3 +307,39 @@ test("rendered Claude copies of aliased packages do not replace edited agent ski
   setup(f);
   assert.equal(text(f, ".agents/skills/example/SKILL.md"), "Edited legacy skill\n");
 });
+
+test("whole-package overrides and deletions exclude new upstream files", (t) => {
+  for (const deleted of [false, true]) {
+    const f = legacyFixture(t);
+    if (deleted) fs.rmSync(path.join(f.home, ".agents/skills/example"), { recursive: true });
+    write(f.repo, ".agents/skills/example/new-upstream.md", "New upstream file\n");
+    run(f, "git", ["add", ".agents/skills/example"]);
+    run(f, "git", ["commit", "-m", "Expand shared package"]);
+    setup(f);
+    assert.equal(fs.existsSync(path.join(f.home, ".agents/skills/example/new-upstream.md")), false);
+    if (!deleted) assert.equal(text(f, ".agents/skills/example/SKILL.md"), "Edited legacy skill\n");
+  }
+});
+
+test("concurrent stale-lock recovery admits only one setup owner", async (t) => {
+  const { spawn } = require("node:child_process");
+  const f = legacyFixture(t);
+  const dead = spawnSync(process.execPath, ["-e", "" ]).pid;
+  write(f.home, ".local/state/ai-config/install.lock", String(dead));
+  const helper = path.join(f.repo, ".config/ai/lib/install.js");
+  const childCode = `
+    const {spawnSync} = require('node:child_process');
+    const result = spawnSync(process.execPath, [process.argv[1], 'acquire'], {encoding:'utf8'});
+    process.stdout.write(String(result.status));
+    setTimeout(() => process.exit(0), 1000);
+  `;
+  const contender = () => new Promise((resolve, reject) => {
+    const child = spawn(process.execPath, ["-e", childCode, helper], { env: f.env });
+    let output = "";
+    child.stdout.on("data", chunk => { output += chunk; });
+    child.on("error", reject);
+    child.on("exit", () => resolve(output));
+  });
+  const results = await Promise.all([contender(), contender()]);
+  assert.deepEqual(results.sort(), ["0", "1"]);
+});

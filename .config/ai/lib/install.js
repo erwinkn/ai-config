@@ -57,6 +57,20 @@ function mergeCopy(source, target) {
   }
   if (exists(source)) copy(source, target);
 }
+function packages(root) {
+  const result = new Map();
+  if (!exists(root)) return result;
+  for (const name of fs.readdirSync(root)) {
+    const file = fs.realpathSync(path.join(root, name));
+    if (fs.statSync(file).isDirectory()) result.set(name, file);
+  }
+  return result;
+}
+function samePackage(a, b) {
+  if (!a || !b) return a === b;
+  const left = entries(a), right = entries(b);
+  return left.size === right.size && [...left].every(([rel, file]) => equal(file, right.get(rel)));
+}
 function prepare() {
   if (version() === VERSION) return;
   if (exists(path.join(journal, "plan.json"))) return;
@@ -75,35 +89,30 @@ function prepare() {
         if (scope === "claude" && fs.realpathSync(active) === path.join(home, ".agents/skills")) continue;
         throw new Error(`Resolve the custom skill directory link before upgrading: ${active}`);
       }
-      // The old renderer expanded package aliases into directories.
-      const baseline = new Map();
-      const shared = path.join(legacy, "shared/skills", scope);
-      if (exists(shared)) {
-        for (const name of fs.readdirSync(shared)) {
-          const file = path.join(shared, name);
-          const resolved = fs.realpathSync(file);
-          if (fs.statSync(resolved).isDirectory()) entries(resolved, name, baseline);
-          else baseline.set(name, file);
-        }
+      // Local skills were complete package replacements, not file overlays.
+      const baseline = packages(path.join(legacy, "shared/skills", scope));
+      const current = packages(active);
+      const localRoot = path.join(legacy, "local/skills", scope);
+      const pinned = packages(localRoot);
+      const deletedFile = path.join(localRoot, ".deletions.json");
+      const deleted = exists(deletedFile) ? JSON.parse(fs.readFileSync(deletedFile, "utf8")) : [];
+      if (!Array.isArray(deleted) || deleted.some(name => typeof name !== "string" ||
+          !name || name === "." || name === ".." || /[\\/]/.test(name))) {
+        throw new Error("Invalid legacy skill deletion list.");
       }
-      const current = entries(active);
-      const aliases = [];
-      for (const [rel, file] of current) {
-        if (scope === "claude" && stat(file).isSymbolicLink()) {
-          const resolved = path.resolve(path.dirname(file), fs.readlinkSync(file));
-          if (resolved.startsWith(path.join(home, ".agents/skills") + path.sep)) aliases.push(rel);
+      for (const name of new Set([...baseline.keys(), ...current.keys(), ...pinned.keys(), ...deleted])) {
+        const file = current.get(name);
+        const alias = path.join(active, name);
+        if (scope === "claude" && stat(alias)?.isSymbolicLink() &&
+            file?.startsWith(path.join(home, ".agents/skills") + path.sep)) continue;
+        if (!pinned.has(name) && !deleted.includes(name) && samePackage(file, baseline.get(name))) continue;
+        if (changes.has(name) && !samePackage(changes.get(name), file)) {
+          throw new Error(`Conflicting agent and Claude skill edits: ${name}`);
         }
-      }
-      for (const rel of new Set([...baseline.keys(), ...current.keys()])) {
-        if (aliases.some(alias => rel === alias || rel.startsWith(alias + "/"))) continue;
-        const file = current.get(rel);
-        if (equal(file, baseline.get(rel))) continue;
-        if (changes.has(rel) && !equal(changes.get(rel), file)) {
-          throw new Error(`Conflicting agent and Claude skill edits: ${rel}`);
-        }
-        changes.set(rel, file);
+        changes.set(name, file);
       }
     }
+
     // Preflight all settings before changing any installation files.
     for (const [rel, file] of entries(path.join(legacy, "local"))) {
       const dest = path.join(home, ".config/ai/local", rel);
@@ -178,14 +187,24 @@ function acquire() {
   }
   fs.mkdirSync(state, { recursive: true, mode: 0o700 });
   const lock = path.join(state, "install.lock");
+  // All contenders serialize stale-owner inspection and replacement under this
+  // short-lived atomic guard. Never automatically steal the recovery guard.
+  const guard = path.join(state, "install-acquire");
+  try { fs.mkdirSync(guard, { mode: 0o700 }); }
+  catch (e) {
+    if (e.code !== "EEXIST") throw e;
+    throw new Error("Another setup process is acquiring the installation lock. Retry later; see the upgrade guide if install-acquire remains after a crash.");
+  }
   try {
-    const owner = Number(fs.readFileSync(lock, "utf8"));
-    if (!Number.isInteger(owner) || owner <= 0) throw new Error("Invalid installation lock; inspect install.lock.");
-    try { process.kill(owner, 0); throw new Error("Another setup process is running."); }
-    catch (e) { if (e.code !== "ESRCH") throw e; }
-    fs.unlinkSync(lock);
-  } catch (e) { if (e.code !== "ENOENT") throw e; }
-  fs.writeFileSync(lock, String(process.ppid), { flag: "wx", mode: 0o600 });
+    try {
+      const owner = Number(fs.readFileSync(lock, "utf8"));
+      if (!Number.isInteger(owner) || owner <= 0) throw new Error("Invalid installation lock; inspect install.lock.");
+      try { process.kill(owner, 0); throw new Error("Another setup process is running."); }
+      catch (e) { if (e.code !== "ESRCH") throw e; }
+      fs.unlinkSync(lock);
+    } catch (e) { if (e.code !== "ENOENT") throw e; }
+    fs.writeFileSync(lock, String(process.ppid), { flag: "wx", mode: 0o600 });
+  } finally { fs.rmdirSync(guard); }
 }
 function release() {
   const lock = path.join(state, "install.lock");

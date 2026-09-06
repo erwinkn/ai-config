@@ -54,7 +54,14 @@ If setup fails, run the same setup command again. It resumes from the progress
 record and does not write version 1 until the final steps succeed. Do not edit
 installation files during an incomplete upgrade. Old skill trees may be absent
 between backup and restoration. Their saved copies remain in the migration
-backup. A later run recovers a lock whose owner process has exited.
+backup. A later run recovers a lock whose owner process has exited. A short-lived
+`install-acquire` directory serializes that recovery. If a process is killed
+while it holds this guard, confirm that no setup process is running, then remove
+that empty directory before retrying. Setup never steals a recovery guard.
+
+After verifying the installation, you can remove the `migration-0-to-1`
+directory with your file manager. Keep `install-version`. Backup removal is
+manual so an upgrade never deletes its own recovery data automatically.
 
 Fresh installations follow the same version protocol without a legacy data
 migration. Normal `ai` commands reject a detected pending upgrade. Explicit
