@@ -15,17 +15,17 @@ $env:AI_CONFIG_HOME = Join-Path $target ".config/ai"
 $env:AI_CONFIG_ACTIVE_HOME = $target
 $env:AI_CONFIG_STATE_HOME = Join-Path $target ".local/state/ai"
 function Assert($value, $message) { if (-not $value) { throw $message } }
-function Git {
+function Invoke-TestGit {
     & git @args
     if ($LASTEXITCODE -ne 0) { throw "Git failed: $args" }
 }
 try {
-    Git clone --no-hardlinks $source $repo
+    Invoke-TestGit clone --no-hardlinks $source $repo
     # Use small portable shared settings; do not contact configured external tools.
     Set-Content (Join-Path $repo ".config/ai/shared/claude.json") '{"theme":"dark"}'
     Set-Content (Join-Path $repo ".config/ai/shared/codex.toml") 'model = "shared"'
-    Git -C $repo add .config/ai/shared
-    Git -C $repo commit -m "Portable settings fixture"
+    Invoke-TestGit -C $repo add .config/ai/shared
+    Invoke-TestGit -C $repo commit -m "Portable settings fixture"
     $setup = Join-Path $repo ".config/ai/scripts/setup-windows-ai.ps1"
     & $setup -GitDir $env:AI_CONFIG_GIT_DIR -WorkTree $target -RepoUrl $repo -ProfilePath $profilePath
     Assert ((Get-Content (Join-Path $target ".local/state/ai-config/install-version")) -eq "1") "Missing installation version"
@@ -41,8 +41,8 @@ try {
     Assert ($profileLines.Count -eq 1) "Duplicate profile registration"
     Assert ((Get-Content (Join-Path $target ".claude/settings.json") -Raw | ConvertFrom-Json).theme -eq "light") "Setup lost a pin"
     Set-Content (Join-Path $repo "update-proof.txt") "new commit"
-    Git -C $repo add update-proof.txt
-    Git -C $repo commit -m "Update fixture"
+    Invoke-TestGit -C $repo add update-proof.txt
+    Invoke-TestGit -C $repo commit -m "Update fixture"
     & $setup -GitDir $env:AI_CONFIG_GIT_DIR -WorkTree $target -RepoUrl $repo -ProfilePath $profilePath
     Assert (Test-Path (Join-Path $target "update-proof.txt")) "Setup did not update the mirror"
     Write-Host "Windows setup, links, profile, pins, rerun, and update passed."
