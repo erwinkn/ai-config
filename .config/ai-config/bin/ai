@@ -1365,6 +1365,8 @@ function runGit(args, { capture = false } = {}) {
 function main() {
   const [command, ...args] = process.argv.slice(2);
   switch (command) {
+    case "bb":
+      return require("../lib/bb").main(args);
     case "sync": {
       return withConfigLock(() => {
         adopt({ quiet: true });
@@ -1417,7 +1419,7 @@ function main() {
       return runGit(args);
     default:
       throw new ConfigError(
-        "Use `ai sync`, `status`, `diff`, `apply`, `capture`, `pin`, `reset`, `remove`, `share`, `skills`, or `git`.",
+        "Use `ai bb`, `sync`, `status`, `diff`, `apply`, `capture`, `pin`, `reset`, `remove`, `share`, `skills`, or `git`.",
       );
   }
 }
