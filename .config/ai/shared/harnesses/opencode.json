@@ -1,0 +1,8 @@
+{
+  "mcp": {
+    "executor": {
+      "type": "remote",
+      "url": "https://executor.erwinkn.com/mcp"
+    }
+  }
+}

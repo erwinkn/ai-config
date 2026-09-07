@@ -49,38 +49,10 @@ default_mode_request_user_input = true
 computer_use = true
 hooks = true
 
-[mcp_servers.mobbin]
-url = "https://api.mobbin.com/mcp"
-
-[mcp_servers.excalidraw]
-url = "https://api.excalidraw.com/api/v1/mcp"
-bearer_token_env_var = "EXCALIDRAW_API_KEY"
-
-[mcp_servers.excalidraw.tools.edit_scene_content]
-approval_mode = "approve"
-
-[mcp_servers.excalidraw.tools.get_scene]
-approval_mode = "approve"
-
-[mcp_servers.excalidraw.tools.get_scene_content]
-approval_mode = "approve"
-
-[mcp_servers.excalidraw.tools.read_excalidraw_format]
-approval_mode = "approve"
-
-[mcp_servers.excalidraw.tools.search_scene_content]
-approval_mode = "approve"
-
-[mcp_servers.excalidraw.tools.take_screenshot]
-approval_mode = "approve"
-
-[mcp_servers.cloudflare-api]
-url = "https://mcp.cloudflare.com/mcp"
-enabled = true
-
-[mcp_servers.railway]
-command = "railway"
-args = [ "mcp" ]
+[mcp_servers.executor]
+url = "https://executor.erwinkn.com/mcp"
+auth = "oauth"
+oauth_resource = "https://executor.erwinkn.com/mcp"
 
 [plugins."coderabbit@openai-curated"]
 enabled = true
@@ -111,9 +83,6 @@ enabled = true
 
 [plugins."template-creator@openai-primary-runtime"]
 enabled = true
-
-[plugins."cloudflare@openai-curated-remote"]
-enabled = false
 
 [plugins."visualize@openai-bundled"]
 enabled = true
