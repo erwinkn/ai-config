@@ -145,6 +145,35 @@ test("removing a managed harness entry preserves unrelated native entries", (t) 
   assert.deepEqual(readJson(file), { mcpServers: { local: { command: "private" } }, projects: { a: {} } });
 });
 
+test("native edits during temporary-file preparation abort replacement and retain the baseline", (t) => {
+  const f = createFixture(t);
+  const original = { mcpServers: { executor: { url: "https://first.example/mcp" } } };
+  writeHarness(f, "cursor", original);
+  run(f, ["apply"]);
+  writeHarness(f, "cursor", { mcpServers: { executor: { url: "https://second.example/mcp" } } });
+  const active = path.join(f.home, ".cursor/mcp.json");
+  const concurrent = { ...original, account: { token: "CONCURRENT_PRIVATE_VALUE" } };
+  const preload = path.join(f.root, "native-writer.cjs");
+  fs.writeFileSync(preload, `
+    const fs = require("node:fs");
+    const path = require("node:path");
+    const chmod = fs.chmodSync;
+    fs.chmodSync = function(file, ...args) {
+      chmod.call(this, file, ...args);
+      if (path.basename(file).startsWith(".mcp.json.")) {
+        fs.writeFileSync(${JSON.stringify(active)}, ${JSON.stringify(JSON.stringify(concurrent))});
+      }
+    };
+  `);
+  f.env.NODE_OPTIONS = `--require ${JSON.stringify(preload)}`;
+  const result = runFailure(f, ["apply"]);
+  assert.match(result.stderr, /Configuration changed during apply: cursor/);
+  assert.ok(!result.stderr.includes("CONCURRENT_PRIVATE_VALUE"));
+  assert.deepEqual(readJson(active), concurrent);
+  assert.deepEqual(readJson(path.join(f.state, "harnesses/cursor.json")), original);
+  assert.deepEqual(fs.readdirSync(path.dirname(active)), ["mcp.json"]);
+});
+
 test("harness sharing rejects credential fields and credential URLs without leaking values", (t) => {
   const f = createFixture(t);
   const original = { mcpServers: { executor: { url: "https://executor.example/mcp" } } };

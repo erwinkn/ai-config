@@ -296,7 +296,7 @@ function diffOperations(current, baseline, target = []) {
     : [{ type: "set", path: target, value: current }];
 }
 
-function atomicWrite(file, content, mode = 0o600) {
+function atomicWrite(file, content, mode = 0o600, beforeRename = () => {}) {
   fs.mkdirSync(path.dirname(file), { recursive: true });
   const temporary = path.join(
     path.dirname(file),
@@ -310,6 +310,7 @@ function atomicWrite(file, content, mode = 0o600) {
     fs.closeSync(descriptor);
     descriptor = undefined;
     fs.chmodSync(temporary, mode);
+    beforeRename();
     fs.renameSync(temporary, file);
   } finally {
     if (descriptor !== undefined) fs.closeSync(descriptor);

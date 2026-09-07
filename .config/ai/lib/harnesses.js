@@ -116,7 +116,13 @@ function apply(plans, atomicWrite) {
   // Refuse concurrent native edits before writing any of these files.
   for (const plan of plans) check(equal(read(plan.files.active), plan.current), `Configuration changed during apply: ${plan.tool}`);
   for (const plan of plans) {
-    if (!equal(plan.current, plan.result)) atomicWrite(plan.files.active, plan.text);
+    if (!equal(plan.current, plan.result)) {
+      // Recheck under the ai write lock after preparing the temporary file,
+      // immediately before replacement. Native apps do not share our lock.
+      atomicWrite(plan.files.active, plan.text, 0o600, () => {
+        check(equal(read(plan.files.active), plan.current), `Configuration changed during apply: ${plan.tool}`);
+      });
+    }
     atomicWrite(plan.files.snapshot, `${JSON.stringify(plan.desired, null, 2)}\n`);
   }
 }

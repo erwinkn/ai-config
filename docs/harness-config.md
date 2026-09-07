@@ -68,6 +68,9 @@ reliably. `ai` does not read separate credential stores or perform OAuth login.
 JSON and TOML formatting may change when `ai` updates a native file. Unmanaged
 values are preserved. This includes credentials already stored in the same native
 file; those values are never written to the shared fragment or baseline.
+The renderer checks for native edits again immediately before replacement.
+Native apps do not share the `ai` lock, so avoid editing their configuration
+while apply runs; the file system does not provide a portable compare-and-swap.
 
 Claude.ai account connectors are separate from the local MCP list. Manage them
 in Claude's connector settings. Each device must authorize Executor separately.
