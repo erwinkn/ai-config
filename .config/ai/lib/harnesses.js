@@ -95,9 +95,9 @@ function prepare(tool) {
   const keys = new Map([...entries(previous), ...entries(desired)].map(([s, k]) => [`${s}/${k}`, [s, k]]));
   for (const [section, key] of keys.values()) {
     check(!own(current, section) || object(current[section]), `Invalid native section for ${tool}.`);
-    const now = current[section]?.[key];
-    const before = previous[section]?.[key];
-    const next = desired[section]?.[key];
+    const now = own(current[section] ?? {}, key) ? current[section][key] : undefined;
+    const before = own(previous[section] ?? {}, key) ? previous[section][key] : undefined;
+    const next = own(desired[section] ?? {}, key) ? desired[section][key] : undefined;
     check(equal(now, next) || equal(now, before),
       `Local ${tool} configuration differs at ${section}.${key}. Use ai harness share ${tool} to promote supported settings, or resolve the field locally.`);
     if (next === undefined) {

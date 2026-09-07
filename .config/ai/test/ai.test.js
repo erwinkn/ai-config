@@ -135,6 +135,40 @@ test("harness drift blocks all config writes and explicit share resolves it", (t
   run(f, ["apply"]);
 });
 
+test("harness apply creates missing native files on a fresh device", (t) => {
+  const f = createFixture(t);
+  const url = "https://executor.example/mcp";
+  const targets = [
+    ["claude-mcp", ".claude.json", "mcpServers", { url, type: "http" }],
+    ["cursor", ".cursor/mcp.json", "mcpServers", { url }],
+    ["devin", ".config/devin/mcp_config.json", "mcpServers", { url, transport: "http" }],
+    ["opencode", ".config/opencode/opencode.json", "mcp", { url, type: "remote" }],
+    ["grok", ".grok/config.toml", "mcp_servers", { url, enabled: true }],
+  ];
+  for (const [tool, file, section, entry] of targets) {
+    assert.equal(fs.existsSync(path.join(f.home, file)), false);
+    writeHarness(f, tool, { [section]: { executor: entry } });
+  }
+  run(f, ["apply"]);
+  for (const [, file, section, entry] of targets) {
+    const native = (file.endsWith(".toml") ? readToml : readJson)(path.join(f.home, file));
+    assert.deepEqual(native[section].executor, entry);
+  }
+});
+
+test("prototype-named MCP entries can be added and removed without false conflicts", (t) => {
+  const f = createFixture(t);
+  const entries = { constructor: { url: "https://one.example/mcp" }, toString: { url: "https://two.example/mcp" } };
+  writeHarness(f, "cursor", { mcpServers: entries });
+  const file = nativeJson(f, ".cursor/mcp.json", { mcpServers: {} });
+  run(f, ["apply"]);
+  assert.deepEqual(readJson(file).mcpServers, entries);
+  run(f, ["apply"]);
+  writeHarness(f, "cursor", {});
+  run(f, ["apply"]);
+  assert.deepEqual(readJson(file).mcpServers, {});
+});
+
 test("removing a managed harness entry preserves unrelated native entries", (t) => {
   const f = createFixture(t);
   writeHarness(f, "claude-mcp", { mcpServers: { executor: { type: "http", url: "https://executor.example/mcp" } } });
