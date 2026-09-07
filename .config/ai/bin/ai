@@ -478,11 +478,14 @@ function renderedValues(paths) {
 function render({ force = false, quiet = false } = {}) {
   const paths = configPaths();
   if (!force) assertNoDrift(paths);
+  const harnesses = require("../lib/harnesses");
+  const harnessPlans = harnesses.prepareAll();
   const { claude, codex } = renderedValues(paths);
   const claudeText = `${JSON.stringify(claude, null, 2)}\n`;
   const codexText = toml().stringify(codex);
   JSON.parse(claudeText);
   toml().parse(codexText);
+  harnesses.apply(harnessPlans, atomicWrite);
   atomicWrite(paths.activeClaude, claudeText);
   atomicWrite(paths.activeCodex, codexText);
   atomicWrite(paths.snapshotClaude, claudeText);
@@ -500,7 +503,7 @@ function render({ force = false, quiet = false } = {}) {
       2,
     )}\n`,
   );
-  if (!quiet) success("Rendered Claude and Codex configuration.");
+  if (!quiet) success("Rendered shared configuration.");
 }
 
 function adoptTool(paths, tool) {
@@ -800,11 +803,13 @@ function diff() {
   printDiffSection("Claude configuration", configDiffEntries(paths, "claude"));
   console.log();
   printDiffSection("Codex configuration", configDiffEntries(paths, "codex"));
+  require("../lib/harnesses").status();
 }
 
 function status() {
   const paths = configPaths();
   printSection("Active configuration", configStatusRows(paths));
+  require("../lib/harnesses").status();
   console.log();
   printSection("Local intent", localIntentRows(paths));
   console.log();
@@ -844,6 +849,18 @@ function main() {
   }
   const [command, ...args] = process.argv.slice(2);
   switch (command) {
+    case "harness":
+      if (args.length === 1 && args[0] === "status") {
+        require("../lib/harnesses").status();
+        return 0;
+      }
+      if (args.length === 2 && args[0] === "share") {
+        return withConfigLock(() => {
+          require("../lib/harnesses").share(args[1], atomicWrite);
+          return 0;
+        });
+      }
+      throw new ConfigError("Use ai harness status or ai harness share <claude-mcp|cursor|devin|opencode|grok>.");
     case "bb":
       return require("../lib/bb").main(args);
     case "sync": {
@@ -903,7 +920,7 @@ function main() {
       return runGit(args);
     default:
       throw new ConfigError(
-        "Use `ai bb`, `sync`, `status`, `diff`, `apply`, `capture`, `pin`, `reset`, `remove`, `share`, or `git`.",
+        "Use `ai bb`, `harness`, `sync`, `status`, `diff`, `apply`, `capture`, `pin`, `reset`, `remove`, `share`, or `git`.",
       );
   }
 }

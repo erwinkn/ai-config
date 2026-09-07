@@ -4,6 +4,19 @@ __pycache__/
 /.claude/settings.json
 /.codex/config.toml
 
+# Native harness settings, account state, and credentials stay on each device.
+# Portable fragments live in .config/ai/shared/harnesses/.
+/.claude.json
+/.claude.json.*
+/.claude/.credentials.json
+/.codex/auth.json
+/.codex/auth.json.*
+/.cursor/mcp.json
+/.cursor/mcp-auth.json
+/.config/devin/
+/.config/opencode/
+/.grok/
+
 # Device-local skill manager lock. Skills themselves are tracked.
 /.agents/.skill-lock.json
 

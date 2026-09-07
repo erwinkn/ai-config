@@ -1,0 +1,14 @@
+{
+  "mcp_servers": {
+    "executor": {
+      "url": "https://executor.erwinkn.com/mcp",
+      "enabled": true
+    }
+  },
+  "ui": {
+    "max_thoughts_width": 120,
+    "fork_secondary_model": "grok-4.5",
+    "yolo": false,
+    "compact_mode": false
+  }
+}
