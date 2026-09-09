@@ -1,0 +1,36 @@
+name: Agent stack workspace
+on:
+  push:
+    branches: [feat/unified-agent-stack-v5]
+    paths: [.github/workflows/stack-workspace.yml, .stack-build.py]
+permissions:
+  contents: write
+jobs:
+  workspace:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Build when supplied
+        run: |
+          if [ -f .stack-build.py ]; then
+            python .stack-build.py
+            python .agents/scripts/check.py
+            git config user.name 'github-actions[bot]'
+            git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+            git add -- .agents .claude .codex .config/ai/shared/claude.json .config/ai/shared/codex.toml docs/agent-stack .github/workflows/agent-stack.yml
+            git rm -- .stack-build.py .github/workflows/stack-workspace.yml
+            git commit -m 'feat: replace non-Cursor instructions with unified agent stack'
+            git push origin HEAD:feat/unified-agent-stack-v5
+          fi
+      - name: Export checkout
+        run: git archive --format=tar HEAD > /tmp/ai-config-workspace.tar
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ai-config-workspace
+          path: /tmp/ai-config-workspace.tar
+          retention-days: 3
