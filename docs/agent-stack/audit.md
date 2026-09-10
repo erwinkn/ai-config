@@ -28,3 +28,7 @@ Original protected tree objects: `.cursor` is `cd42921370e9a5b7ff51b463d329b096b
 ## Disposition
 
 Implemented as a branch-scoped candidate. The full-rewrite procedure and empirical model-role choices remain experiments for real projects. Check current PR checks and requirements before merging. Nothing in this audit authorizes merging, auto-merge, or deployment.
+
+## Publication correction
+
+A post-commit clean-archive check exposed a legacy `.claude/.gitignore` rule: all new Claude definitions had been generated and tested in the build workspace but were absent from git. The ignore rule has been removed, all 12 native definitions are now committed, and the published tree is checked again from a fresh `git archive` before this correction is pushed. Earlier working-directory success did not establish publication completeness. This correction is recorded as a new log event, not erased from the history.
