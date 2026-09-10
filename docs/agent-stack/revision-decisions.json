@@ -1,0 +1,125 @@
+[
+  {
+    "id": "D1",
+    "title": "More granular role/model assignments",
+    "status": "Accepted",
+    "decision": "Keep the original seven roles and add implementer-fast, implementer-deep, simplifier, reviewer-second, and auditor. The exact names are a concrete design choice implementing the approved finer-grained control.",
+    "targets": [
+      "A-implementer-fast",
+      "A-implementer-deep",
+      "A-simplifier",
+      "A-reviewer-second",
+      "A-auditor"
+    ],
+    "source": "User review feedback in this conversation, September 9, 2026"
+  },
+  {
+    "id": "D2",
+    "title": "Keep the approved consolidations",
+    "status": "Accepted",
+    "decision": "One clarify skill composes domain modeling. Feature, repair, and refactor remain branches of deliver. Specification, implementation planning, and any requested tickets remain in plan.",
+    "targets": [
+      "S-clarify",
+      "S-model",
+      "S-plan",
+      "B-deliver"
+    ],
+    "source": "User review feedback in this conversation, September 9, 2026"
+  },
+  {
+    "id": "D3",
+    "title": "Separate ideation from architecture",
+    "status": "Accepted",
+    "decision": "ideate has its own pipeline. design still considers alternatives as part of shaping an architecture.",
+    "targets": [
+      "S-ideate",
+      "S-design",
+      "B-discover"
+    ],
+    "source": "User review feedback in this conversation, September 9, 2026"
+  },
+  {
+    "id": "D4",
+    "title": "Offer an explicit rethink of an existing system",
+    "status": "Optional trial",
+    "decision": "Include alternatives as a standalone report-only entry point because the user raised it as potentially useful. Do not make it a mandatory phase or imply they demanded a redesign of every system.",
+    "targets": [
+      "S-alternatives"
+    ],
+    "source": "User review feedback in this conversation, September 9, 2026"
+  },
+  {
+    "id": "D5",
+    "title": "Keep a reusable arena/swarm operation",
+    "status": "Accepted",
+    "decision": "One model-invokable swarm skill supports manual invocation and composition, with distinct partition and compare modes.",
+    "targets": [
+      "S-swarm"
+    ],
+    "source": "User review feedback in this conversation, September 9, 2026"
+  },
+  {
+    "id": "D6",
+    "title": "Default to structural improvement",
+    "status": "Accepted",
+    "decision": "Permit and prefer a coherent root-cause refactor or redesign over a smaller patch when it better fulfills the same requirements. A substantive change gets a simplification assessment and fresh review, including reassessment after material iteration churn.",
+    "targets": [
+      "P-simplicity",
+      "P-causes",
+      "S-simplify",
+      "A-simplifier",
+      "B-deliver"
+    ],
+    "source": "User review feedback in this conversation, September 9, 2026"
+  },
+  {
+    "id": "D7",
+    "title": "Experiment with a from-scratch PR rewrite",
+    "status": "Manual experiment",
+    "decision": "rewrite freezes the original, reconstructs semantic and operational goals, builds from the target base in a fresh context/worktree, independently compares and verifies, and preserves the original. It is never auto-invoked. One rewrite is the starting experiment, not a compulsory two-or-three-draft ritual.",
+    "targets": [
+      "B-rewrite",
+      "F-rewrite-contract"
+    ],
+    "source": "User review feedback in this conversation, September 9, 2026"
+  },
+  {
+    "id": "D8",
+    "title": "Complete implementation through merge-ready",
+    "status": "Accepted",
+    "decision": "Starting delivery carries through implementation, structural improvement, review/fix, pushes/PR, CI and feedback, and final audit. Stop at merge-ready, never merge or arm auto-merge by default. Explicit narrower endpoints still apply.",
+    "targets": [
+      "R-authority",
+      "B-deliver",
+      "B-babysit",
+      "B-ship"
+    ],
+    "source": "User review feedback in this conversation, September 9, 2026"
+  },
+  {
+    "id": "D9",
+    "title": "Keep one log and publish a confidence-graded decision audit",
+    "status": "Accepted",
+    "decision": "Single canonical log with one writer, separate worktrees for simultaneous agents, independent evidence audit, and a durable artifact on the PR. TSV columns and repository-hosted publication are proposed concrete defaults, not claims of verbatim user instructions.",
+    "targets": [
+      "O-record",
+      "F-deliver-record",
+      "S-audit",
+      "A-auditor",
+      "F-ship-description"
+    ],
+    "source": "User review feedback in this conversation, September 9, 2026"
+  },
+  {
+    "id": "D10",
+    "title": "Rename maintain to model-invokable compound",
+    "status": "Accepted",
+    "decision": "Model invocation can inspect/propose learning. Apply a direct explicit instruction to change a skill/rule without another approval; inferred persistent instruction edits wait for approval. learn stays focused on project knowledge.",
+    "targets": [
+      "B-compound",
+      "R-guidance",
+      "S-learn"
+    ],
+    "source": "User review feedback in this conversation, September 9, 2026"
+  }
+]

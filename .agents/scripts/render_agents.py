@@ -1,0 +1,146 @@
+#!/usr/bin/env python3
+"""Render host definitions from canonical Markdown; never execute an agent."""
+from __future__ import annotations
+import argparse
+import json
+from pathlib import Path
+import re
+import sys
+
+ROOT = Path(__file__).resolve().parents[2]
+
+
+def read_role(path):
+    text = path.read_text(encoding='utf-8')
+    if not text.startswith('---\n') or '\n---\n' not in text[4:]:
+        raise ValueError(f'Missing role frontmatter: {path}')
+    header, body = text[4:].split('\n---\n', 1)
+    data = {}
+    for line in header.splitlines():
+        key, sep, value = line.partition(': ')
+        if not sep or key in data:
+            raise ValueError(f'Invalid or duplicate metadata: {path}: {key}')
+        data[key] = json.loads(value)
+    for key in ('name', 'description', 'runner', 'model', 'effort', 'access'):
+        if not isinstance(data.get(key), str) or not data[key]:
+            raise ValueError(f'Missing {key}: {path}')
+    if data['name'] != path.stem or not re.fullmatch(r'[a-z][a-z0-9-]*', path.stem):
+        raise ValueError(f'Role slug mismatch: {path}')
+    if data['runner'] not in ('claude', 'codex', 'grok') or data['access'] not in ('read', 'write'):
+        raise ValueError(f'Unsupported runner or access: {path}')
+    if data['effort'] not in ('low', 'medium', 'high', 'xhigh', 'max', 'default'):
+        raise ValueError(f'Unsupported effort: {path}')
+    return data, body.strip()
+
+
+def native_prompt(role, body):
+    return (
+        'The caller supplies stack_root, workspace, expected revision, goal, owned scope, '
+        'procedure, acceptance evidence, authority, budget, and return destination. '
+        'Resolve stack_root from the installed .agents directory if omitted; never search '
+        'the target project for a missing bundled instruction. Read the canonical role '
+        f'at <stack_root>/agents/{role["name"]}.md and <stack_root>/agents/references/common.md. '
+        'Resolve bundled references relative to the canonical file, not this generated definition. '
+        'Verify the workspace and revision before writing or making evidence claims. '
+        'Execute the assigned skill directly; no recursive self-dispatch or unrequested shipping tail.\n\n'
+        + body
+    )
+
+
+def bridge_prompt(role):
+    return f'''You are the execution bridge for {role['name']}, not the specialist itself.
+The specialist runs through {role['runner']} on {role['model']} at {role['effort']} effort.
+Read <stack_root>/agents/{role['name']}.md, its common contract, and
+<stack_root>/agents/references/execution.md. Use the {role['runner']} recipe with
+this role's exact model and {role['access']} access. Do not execute the specialist's
+work on your bootstrap model or present its response as an independent assessment.
+
+Validate workspace, pinned revision, owned scope, data-egress authority, acceptance,
+budget, and return destination. Materialize a self-contained leaf brief with the
+canonical role, assigned skill, needed references, settled decisions, and evidence
+pointers. The leaf executes directly, not by delegating the same role again.
+Launch the configured installed CLI and collect a terminal result before finishing.
+Keep a real process handle for long runs, cancel/reap only owned processes, and
+preserve recoverable state on interruption. A live child or result file is not proof
+of task completion. Inspect its actual artifacts, diff, and checks.
+
+Missing runner, unsupported model/flags, unavailable authentication, permission denial,
+or incompatible sandbox is a blocker. Never bypass permissions, weaken a sandbox,
+remove nested-session safeguards, alter credentials, or silently substitute models.
+The user's existing restrictions remain binding across the process boundary.
+Return the requested and observed executor separately, CLI version, exit status,
+artifact/evidence pointers, significant decisions, deviations, and remaining gaps.
+If actual model is not observable, say so. Do not return raw secret-bearing logs or
+private internal reasoning. The parent owns integration, publication, and the log.
+'''
+
+
+def outputs(root=ROOT):
+    result, roles = {}, []
+    for file in sorted((root / '.agents/agents').glob('*.md')):
+        if file.name == 'README.md':
+            continue
+        role, body = read_role(file)
+        roles.append(role)
+        native, bridge = native_prompt(role, body), bridge_prompt(role)
+        claude_native = role['runner'] == 'claude'
+        meta = {'name': role['name'], 'description': role['description'],
+                'model': role['model'] if claude_native else 'claude-fable-5-1',
+                'effort': role['effort'] if claude_native else 'medium'}
+        if claude_native and role['access'] == 'read':
+            meta['permissionMode'] = 'plan'
+        header = '---\n' + ''.join(f'{k}: {json.dumps(v)}\n' for k, v in meta.items()) + '---\n\n'
+        result[root / f'.claude/agents/{role["name"]}.md'] = (
+            header + '<!-- Generated by .agents/scripts/render_agents.py; edit the canonical role. -->\n\n'
+            + (native if claude_native else bridge) + '\n')
+        codex_native = role['runner'] == 'codex'
+        config = {'name': role['name'], 'description': role['description'],
+                  'model': role['model'] if codex_native else 'gpt-5.6-luna',
+                  'model_reasoning_effort': role['effort'] if codex_native else 'low'}
+        if codex_native:
+            config['sandbox_mode'] = 'read-only' if role['access'] == 'read' else 'workspace-write'
+        # Foreign CLIs inherit the parent's sandbox. Never force full access to make
+        # a bridge work; the CLI may need its own normal auth/session files.
+        config['developer_instructions'] = native if codex_native else bridge
+        result[root / f'.codex/agents/{role["name"]}.toml'] = (
+            '# Generated by .agents/scripts/render_agents.py; edit the canonical role.\n'
+            + ''.join(f'{k} = {json.dumps(v, ensure_ascii=False)}\n' for k, v in config.items()))
+    table = '# Role assignments\n\nEdit a canonical role Markdown file, then run `python3 .agents/scripts/render_agents.py` from the configuration checkout. This authoring command generates files; it does not launch agents. Metadata uses the JSON-scalar subset of YAML.\n\n'
+    table += '| Role | Specialist runner | Model | Effort | Claude | Codex |\n| --- | --- | --- | --- | --- | --- |\n'
+    for r in roles:
+        table += f'| [{r["name"]}]({r["name"]}.md) | {r["runner"]} | `{r["model"]}` | {r["effort"]} | {"Native" if r["runner"]=="claude" else "CLI bridge"} | {"Native" if r["runner"]=="codex" else "CLI bridge"} |\n'
+    table += '\nThe existing conversation remains lead. Claude starts on Fable medium; Codex starts on Astra high and delegates Fable roles when appropriate. Claude bridges bootstrap on Fable medium, Codex bridges on Luna low, then invoke the named specialist. This adds overhead; a bootstrap result is not specialist work. Grok effort uses its installed runner default. These assignments are starting preferences, not a measured ranking or proof of account entitlement.\n\n'
+    table += 'Known deterministic operations need no model. Use fast implementation only for settled mechanical edits, ordinary implementation by default, and deep implementation for difficult semantics. A missing credential or denied tool is not a reason to select a larger model. Follow [execution](references/execution.md) for foreign-provider roles and [common instructions](references/common.md) for ownership and reporting.\n'
+    result[root / '.agents/agents/README.md'] = table
+    return result
+
+
+def render(root=ROOT, check=False):
+    expected, errors = outputs(root), []
+    for file, text in expected.items():
+        if file.is_symlink():
+            errors.append(f'Refusing generated-file symlink: {file.relative_to(root)}')
+        elif not file.exists() or file.read_text(encoding='utf-8') != text:
+            if check:
+                errors.append(f'Generated file differs: {file.relative_to(root)}')
+            else:
+                file.parent.mkdir(parents=True, exist_ok=True)
+                file.write_text(text, encoding='utf-8')
+    for folder, pattern in (('.claude/agents', '*.md'), ('.codex/agents', '*.toml')):
+        for file in (root / folder).glob(pattern):
+            if file not in expected:
+                errors.append(f'Unexpected native role; remove explicitly: {file.relative_to(root)}')
+    return errors
+
+
+if __name__ == '__main__':
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument('--check', action='store_true')
+    args = parser.parse_args()
+    try:
+        errors = render(check=args.check)
+        if errors:
+            parser.exit(1, '\n'.join(errors) + '\n')
+        print('Native role definitions are current.' if args.check else 'Rendered native definitions and role table.')
+    except (OSError, ValueError) as exc:
+        parser.exit(1, f'Rendering failed: {exc}\n')

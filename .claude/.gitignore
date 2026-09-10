@@ -17,8 +17,5 @@ todos/
 history.jsonl
 stats-cache.json
 
-# Auto-generated (except hand-written codex driver agents)
-agents/*
-!agents/codex-implementer.md
-!agents/codex-reviewer.md
-!agents/codex-computer-use.md
+# Native agent definitions are committed from the canonical Markdown roles.
+# Run python3 .agents/scripts/render_agents.py in the configuration checkout.

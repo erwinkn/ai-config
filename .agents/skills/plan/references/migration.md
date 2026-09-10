@@ -1,0 +1,3 @@
+# Migration
+
+First identify controlled callers, published interfaces, persisted formats, and separately deployed consumers. For a closed-world internal API, migrate all callers and remove the legacy API in one verified change when practical. For external or rolling compatibility, expand the accepted form, migrate consumers/data in verified batches, then contract only when remaining dependencies are gone. A local integration branch may contain planned temporary breakage, but every published unit must satisfy the behavior and compatibility it promises. Preserve a rollback or recovery path for consequential mutations. Neither “always keep compatibility” nor “always delete immediately” is the general rule.

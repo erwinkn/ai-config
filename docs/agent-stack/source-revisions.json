@@ -1,0 +1,48 @@
+{
+  "as_of": "2026-09-08",
+  "coverage": "202 public skill, principle, playbook, command, and role entry points; two HumanLayer essays; selected supporting references and official model documentation. Not an execution audit of every helper script or private product.",
+  "repositories": [
+    {
+      "key": "cursor-plugins",
+      "repository": "cursor/plugins",
+      "revision": "71ed0d1076fec562c1b74ee353121a8d00f75382",
+      "entry_points": 91
+    },
+    {
+      "key": "compound",
+      "repository": "EveryInc/compound-engineering-plugin",
+      "revision": "8df67793b9733d2220fa9a7fc37139931471af62",
+      "entry_points": 33
+    },
+    {
+      "key": "pocock",
+      "repository": "mattpocock/skills",
+      "revision": "3cca18b368ae95cdbdebbff572ccafa662551015",
+      "entry_points": 37
+    },
+    {
+      "key": "humanlayer-skills",
+      "repository": "humanlayer/skills",
+      "revision": "3c2629142c5d437428269b1b722b08c0b87f574d",
+      "entry_points": 5
+    },
+    {
+      "key": "dex-slopfiles",
+      "repository": "dexhorthy/slopfiles",
+      "revision": "f7a350af0fd0998eab8428e4ee3ec9baf4f46d88",
+      "entry_points": 3
+    },
+    {
+      "key": "humanlayer-legacy",
+      "repository": "humanlayer/humanlayer",
+      "revision": "99abe673498cf8bdcd5f989aebe9406a27185b3b",
+      "entry_points": 33
+    },
+    {
+      "key": "humanlayer-context",
+      "repository": "humanlayer/advanced-context-engineering-for-coding-agents",
+      "revision": "f2bc7aec4575418d2d2e83fec078266cc56d3e6a",
+      "entry_points": 0
+    }
+  ]
+}
