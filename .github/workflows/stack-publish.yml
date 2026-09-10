@@ -1,0 +1,55 @@
+name: Publish native stack definitions
+on:
+  push:
+    branches: [feat/unified-agent-stack-v5]
+    paths: [.github/workflows/stack-publish.yml]
+permissions:
+  contents: write
+concurrency:
+  group: isolated-stack-publish
+  cancel-in-progress: false
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Render, record, and commit the complete native stack
+        run: |
+          python .agents/scripts/render_agents.py
+          python .agents/scripts/check.py --base d7a1a8c63f89fd9ba63edfd72330ae929489d3ab
+          python -m unittest discover -s .agents/tests -v
+          python .agents/scripts/record.py docs/agent-stack/decisions.tsv --phase publication --actor implementation-session --decision 'Remove the legacy ignore rule and commit every generated Claude definition' --reason 'A clean archive exposed files that passed workspace tests but were omitted from git' --evidence '.claude/.gitignore; .claude/agents; clean-archive validation in this workflow' --outcome 'Native definitions restored to version control; clean-archive checks required before push' --status corrected
+          cat >> docs/agent-stack/audit.md <<'EOF'
+
+          ## Publication correction
+
+          A post-commit clean-archive check exposed a legacy `.claude/.gitignore` rule: all new Claude definitions had been generated and tested in the build workspace but were absent from git. The ignore rule has been removed, all 12 native definitions are now committed, and the published tree is checked again from a fresh `git archive` before this correction is pushed. Earlier working-directory success did not establish publication completeness. This correction is recorded as a new log event, not erased from the history.
+          EOF
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add -- .claude/agents docs/agent-stack/decisions.tsv docs/agent-stack/audit.md
+          test "$(git ls-files .claude/agents | wc -l)" -eq 12
+          git diff --cached --exit-code d7a1a8c63f89fd9ba63edfd72330ae929489d3ab -- .cursor .cursor-plugin .config/ai/shared/harnesses/cursor.json
+          git commit -m 'fix(agents): publish all native Claude roles and record archive verification'
+      - name: Validate the committed tree rather than untracked build output
+        run: |
+          mkdir /tmp/stack-committed
+          git archive HEAD | tar -x -C /tmp/stack-committed
+          cd /tmp/stack-committed
+          python .agents/scripts/check.py
+          python -m unittest discover -s .agents/tests -v
+      - name: Publish validated commit
+        run: |
+          git push origin HEAD:feat/unified-agent-stack-v5
+          git archive --format=tar HEAD > /tmp/ai-config-stack-verified.tar
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ai-config-stack-verified
+          path: /tmp/ai-config-stack-verified.tar
+          retention-days: 3
