@@ -32,7 +32,7 @@ jobs:
             git config user.name 'github-actions[bot]'
             git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
             git add -- .agents .claude .codex .config/ai/shared/claude.json .config/ai/shared/codex.toml docs/agent-stack
-            git rm -- .stack-build.py .stack-core.py .stack-render.py .stack-check.py .stack-record.py .stack-tests.py .stack-lead.md .stack-execution.md .stack-readme.md
+            git rm -- .stack-build.py .stack-core.py .stack-render.py .stack-check.py .stack-record.py .stack-tests.py .stack-lead.md .stack-execution.md .stack-readme.md .stack-data-*.b64
             git diff --cached --exit-code d7a1a8c63f89fd9ba63edfd72330ae929489d3ab -- .cursor .cursor-plugin .config/ai/shared/harnesses/cursor.json
             git commit -m 'feat: replace non-Cursor setup with the unified agent stack'
             git push origin HEAD:feat/unified-agent-stack-v5
