@@ -1,4 +1,4 @@
-model = "gpt-5.6-sol"
+model = "gpt-6-astra"
 model_reasoning_effort = "high"
 personality = "pragmatic"
 model_verbosity = "low"
@@ -15,7 +15,7 @@ max_concurrent_threads_per_session = 10
 [desktop]
 composerEnterBehavior = "cmdIfMultiline"
 followUpQueueMode = "steer"
-git-create-pull-request-as-draft = true
+git-create-pull-request-as-draft = false
 keepRemoteControlAwakeWhilePluggedIn = true
 notifications-permissions-enabled = true
 notifications-turn-mode = "unfocused"
@@ -89,43 +89,3 @@ enabled = true
 
 [plugins."sites@openai-bundled"]
 enabled = true
-
-[[skills.config]]
-path = "/Users/erwin/.agents/skills/bro/SKILL.md"
-enabled = false
-
-[[skills.config]]
-path = "/Users/erwin/.agents/skills/ast-grep/SKILL.md"
-enabled = false
-
-[[skills.config]]
-path = "/Users/erwin/.agents/skills/ai-agents/SKILL.md"
-enabled = false
-
-[[skills.config]]
-path = "/Users/erwin/.agents/skills/vercel-composition-patterns/SKILL.md"
-enabled = false
-
-[[skills.config]]
-path = "/Users/erwin/.agents/skills/vercel-react-best-practices/SKILL.md"
-enabled = false
-
-[[skills.config]]
-path = "/Users/erwin/.agents/skills/vercel-react-native-skills/SKILL.md"
-enabled = false
-
-[[skills.config]]
-path = "/Users/erwin/.agents/skills/simplify/SKILL.md"
-enabled = false
-
-[[skills.config]]
-path = "/Users/erwin/.agents/skills/humanizer/SKILL.md"
-enabled = false
-
-[[skills.config]]
-path = "/Users/erwin/.agents/skills/karpathy-style/SKILL.md"
-enabled = false
-
-[[skills.config]]
-path = "/Users/erwin/.agents/skills/use-railway/SKILL.md"
-enabled = false

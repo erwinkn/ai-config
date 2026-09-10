@@ -3,7 +3,7 @@
     "allow": [],
     "defaultMode": "auto"
   },
-  "model": "opus[1m]",
+  "model": "claude-fable-5-1",
   "enabledPlugins": {
     "canvas@claude-canvas": true,
     "codex@openai-codex": true
@@ -16,7 +16,7 @@
       }
     }
   },
-  "effortLevel": "high",
+  "effortLevel": "medium",
   "skipDangerousModePermissionPrompt": true,
   "theme": "dark",
   "skipAutoPermissionPrompt": true

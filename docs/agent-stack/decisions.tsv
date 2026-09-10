@@ -1,0 +1,5 @@
+id	time	phase	actor	decision	reason	evidence	outcome	status
+D0001	2026-09-10T06:47:21+00:00 (recorded)	scope	implementation-session	Replace only the non-Cursor stack on the feature branch	Explicit user scope	d7a1a8c63f89fd9ba63edfd72330ae929489d3ab	Main and Cursor configuration unchanged	verified
+D0002	2026-09-10T06:47:21+00:00 (recorded)	design	implementation-session	Canonical Markdown plus generated native role definitions	One source per role without an orchestration runtime	.agents/scripts/render_agents.py	31 packages, 12 roles and 252 mappings validated	verified
+D0003	2026-09-10T06:47:21+00:00 (recorded)	models	implementation-session	Use explicit provider CLI bridges rather than invalid native model IDs	Hosts cannot select a foreign provider by changing a model field	.agents/agents/references/execution.md	Wiring checked; authenticated execution remains untested	unverified
+D0004	2026-09-10T06:47:21+00:00 (recorded)	tests	implementation-session	Exercise negative validation paths and preservation	A checker must reject drift, not only accept its own output	.agents/tests/test_stack.py	20 offline regression tests passed in this build	verified

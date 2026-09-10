@@ -1,16 +1,49 @@
 ---
-name: handoff
-description: Compact the current conversation into a handoff document for another agent to pick up.
-argument-hint: "What will the next session be used for?"
-disable-model-invocation: true
+name: "handoff"
+description: "Use when the user pauses, resumes, transfers, or recalls in-flight work, or when a context boundary requires preserving task state."
 ---
 
-Write a handoff document summarising the current conversation so a fresh agent can continue the work. Save to the temporary directory of the user's OS - not the current workspace.
+# Handoff
 
-Include a "suggested skills" section in the document, naming which skills the next agent should call the Skill tool for.
+One capability covers save, pickup, and scoped recall. It does not invent a separate continuation runtime.
 
-Do not duplicate content already captured in other artifacts (specs, plans, ADRs, issues, commits, diffs). Reference them by path or URL instead.
+## Assignment
 
-Redact any sensitive information, such as API keys, passwords, or personally identifiable information.
+lead; scout/analyst may reconstruct prior evidence.
 
-If the user passed arguments, treat them as a description of what the next session will focus on and tailor the doc accordingly.
+Use the named agent definition for substantive delegated work. If you are already its assigned worker, execute this procedure directly; do not dispatch yourself again. Preserve the caller's endpoint and return mode. Read [shared rules](../principles/references/rules.md) and the relevant [principles](../principles/SKILL.md).
+
+## Procedure
+
+1. For a pause, finish or safely stop the current atomic operation and stop starting new work.
+
+2. Save goal, decisions, artifact pointers, exact code/remote state, actual checks, open work, and the next action.
+
+3. For pickup, read that record and reconcile the current branch, files, remote state, and required resources.
+
+4. Reuse still-valid evidence; rerun only what changed or what a consequential next step requires. Continue under the appropriate existing playbook.
+
+## Rules
+
+- A WIP commit requires commit authority; a local note or patch may be the appropriate preservation method.
+- Do not trust stale completion marks blindly or repeat the whole investigation by default.
+- A handoff never claims that another agent was launched unless the host actually launched it.
+- Reference the canonical decision log and current PR audit; do not copy them into a rival history or treat a stale audit as current proof.
+
+## Complete when
+
+A cold-start reader can identify the true state and next action without recreating the session.
+
+Return or save handoff, record as needed under [artifact conventions](../../ARTIFACTS.md).
+
+## Relevant detail
+
+Read each applicable section before its step.
+
+- [continuation](SKILL.md#continuation).
+
+<a id="continuation"></a>
+
+## Continuation
+
+A continuation note records goal, scope/authority, settled decisions, actual branch/commit/PR state, changed paths, checks performed, retained evidence, failed approaches worth avoiding, owned active resources, and the next action. Reference existing artifacts rather than duplicate them. On resume, reconcile what changed and reuse still-valid evidence. Preserve progress before a context reset using the host’s supported mechanism; never pretend that writing a note launched another session.

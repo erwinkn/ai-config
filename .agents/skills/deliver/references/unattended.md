@@ -1,0 +1,3 @@
+# Unattended
+
+Carry the approved outcome, scope, decisions, and merge-ready endpoint unless explicitly narrowed. Continue through implementation, structural simplification, review/fix, CI, and audit publication without repeated execution questions. Keep the canonical record as work occurs. Genuine missing product intent, changed authority, or a scope boundary is still a decision; continue independent authorized work where possible. Bound equivalent retries, revisit failed premises, and preserve a checkpoint at limits. Existing host capabilities provide any waiting or continuation. Never invent monitoring, weaken the target, auto-merge, or silently run manual rewrite.
