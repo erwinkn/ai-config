@@ -31,6 +31,8 @@ try {
     Assert ((Get-Content (Join-Path $target ".local/state/ai-config/install-version")) -eq "1") "Missing installation version"
     Assert ((Get-Item (Join-Path $target ".claude/skills")).LinkType -eq "SymbolicLink") "Claude skills must be a real link"
     Assert ((Get-Item (Join-Path $target ".codex/AGENTS.md")).LinkType -eq "SymbolicLink") "Codex instructions must be a real link"
+    $branch = & git "--git-dir=$env:AI_CONFIG_GIT_DIR" symbolic-ref --short HEAD
+    Assert ((& git "--git-dir=$env:AI_CONFIG_GIT_DIR" config "branch.$branch.merge") -eq "refs/heads/$branch") "The mirror branch must track origin"
     . $profilePath
     ai status
     Assert ($LASTEXITCODE -eq 0) "The registered ai function failed"

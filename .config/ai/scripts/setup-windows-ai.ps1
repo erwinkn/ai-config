@@ -142,6 +142,10 @@ try {
         Invoke-AiGit merge --ff-only $installationTarget
         $backup = $null
     }
+    # A bare clone tracks no upstream, so a plain `ai git push` would fail.
+    $branch = Invoke-AiGit symbolic-ref --short HEAD
+    Invoke-AiGit config "branch.$branch.remote" origin
+    Invoke-AiGit config "branch.$branch.merge" "refs/heads/$branch"
     Invoke-InstallStep restore
     Sync-LocalProfileSnippet
     Push-Location (Join-Path $WorkTree ".config/ai")

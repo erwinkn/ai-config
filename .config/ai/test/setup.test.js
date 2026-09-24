@@ -106,6 +106,13 @@ for (const platform of ["Linux", "Darwin"]) {
     const profile = platform === "Linux" ? ".profile" : ".zprofile";
     assert.equal(text(f, profile).split("# Added by ai-config setup").length - 1, 1);
     assert.equal(run(f, "git", ["status", "--porcelain"]).stdout, "");
+    const ai = path.join(f.home, ".local/bin/ai");
+    write(f.home, "push-proof.txt", "from the device\n");
+    run(f, ai, ["git", "add", "push-proof.txt"]);
+    run(f, ai, ["git", "commit", "-m", "Push from the device"]);
+    run(f, "git", ["config", "receive.denyCurrentBranch", "updateInstead"]);
+    run(f, ai, ["git", "push"]);
+    assert.equal(fs.readFileSync(path.join(f.repo, "push-proof.txt"), "utf8"), "from the device\n");
   });
 }
 
