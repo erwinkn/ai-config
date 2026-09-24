@@ -1,52 +1,15 @@
-- Run skill scripts with `skillx <skill-name> ...`
-- Access the bare home Git mirror through `ai git <arguments>`
-- Active Claude and Codex setting changes stay local unless `ai share <tool> <path...>` promotes them
-- Cursor plugin estack lives under `.cursor/` (manifests in `.cursor-plugin/`) and is not rendered by `ai apply`
-- Common workflow: `ai share` -> review -> `ai git commit` -> `ai git push` -> `ai sync` on another device
-- STE100: write all user-facing prose in ASD-STE100 Simplified Technical English. Apply this to explanations, plans, reviews, summaries, and questions. Do not change source code, identifiers, commands, quotations, logs, or text that must follow another specified style.
+Hi! I'm Erwin, a human. If you're reading this, we'll be talking or working together soon. So, before that, I'd like to introduce myself. 
 
-# Picking the right models for workflows and subagents
+I'm a software engineer, more of the generalist type. I like to touch everything: infrastructure, product, tooling, low-level performance, etc. I have a general engineering background and I'm decently well-versed in math, physics, chemistry, climate tech & science. 
 
-Rankings, higher = better. Cost reflects what I actually pay (OpenAI has really generous
-limits), not list price. Intelligence is how hard a problem you can hand the model
-unsupervised. Taste covers UI/UX, code quality, API design, and copy.
+I also love tasteful design and craftsmanship, whether it's in user interfaces, architecture, furniture, fashion, food, wine, and more. So, the quality and beauty of what we produce matters a great deal to me.
 
-| model    | cost | intelligence | taste |
-|----------|------|--------------|-------|
-| gpt-5.5  | 9    | 8            | 5     |
-| sonnet-5 | 5    | 5            | 7     |
-| opus-5   | 4    | 8            | 8     |
-| fable-5  | 2    | 9            | 9     |
+I tend to work across multiple agents and projects, so assume I have not read all the code and detailed briefs that have been produced. Our discussions should be self-sufficient and allow me to understand the design, choices, implementation, and tradeoffs purely from its context and general knowledge of the current project. Once I actually read through specific material, I will let you know by pointing directly at it.
 
-Opus 5 supersedes Opus 4.8. Use Opus 5 wherever the older guidance said 4.8.
+It means that I appreciate responses and writing optimized for my reading comprehension and parsing speed. Most things can be explained pretty simply, if you assume a competent audience! Using technical terms and precise words is great for accuracy, but only when they are well-established and general; not project-specific lingo.
 
-How to apply:
-- These are defaults, not limits. You have standing permission to override them: if a cheaper
-model's output doesn't meet the bar, rerun or redo the work with a smarter model without
-asking. Judge the output, not the price tag. Escalating costs less than shipping mediocre
-work.
-- Cost is a tie-breaker only; when axes conflict for anything that ships, intelligence >
-taste > cost.
-- Bulk/mechanical work (clear-spec implementation, data analysis, migrations): gpt-5.5. It's
-effectively free.
-- Anything user-facing (UI, copy, API design) needs taste ≥ 7.
-- Reviews of plans/implementations: fable-5 or opus-5, optionally gpt-5.5 as an extra
-independent perspective.
-- Never use Haiku.
-- Rate limits are real: fable-5 in particular runs out. If a delegated agent dies with a
-usage-limit error, switch it to the next model down the same axis (fable-5 → opus-5) and
-re-send the prompt rather than waiting or silently downgrading the work.
-- Mechanics: gpt-5.5 is only reachable through the Codex CLI. `codex exec` / `codex review`
-(my ~/.codex/config.toml defaults to gpt-5.5). Use the codex-implementation, codex-review,
-and codex-computer-use skills; for work they don't cover (investigation, data analysis), run
-`codex exec -s read-only` directly with a self-contained prompt.
-- Claude models (sonnet-5, opus-5, fable-5) run via the Agent/Workflow model parameter.
+Us humans generalize very well from examples, so use them profusely when explaining a bug, how something works, a design decision, etc... It's often much clearer for me than a high-level explanation!
 
-Using gpt-5.5 inside workflows and subagents (the model parameter only takes Claude models,
-so use the dedicated driver agents):
-- `codex-implementer`, `codex-reviewer`, and `codex-computer-use` (defined in
-~/.claude/agents/, declaring `model: opus`, i.e. the current Opus release) drive Codex per
-the matching skill. Pass them
-via `subagent_type` on the Agent tool or `agentType` in Workflow `agent()` calls. Give them
-the task and repo path; they compose the codex prompt, run it, and judge the result
-themselves.
+Feel free to exercise taste! If you notice that existing code or content is wrong or inelegant, that one of my assumptions is shaky, or you simply have a better idea for something, even if it's tangential and not directly related to the task, please let me know! For technical work, always ask yourself what is the elegant, simple, clean, and efficient solution or design for the task at-hand. 
+
+Lastly, let's make it fun! We're going to spend a lot of time working together, we should enjoy it.
