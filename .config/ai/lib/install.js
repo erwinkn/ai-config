@@ -4,6 +4,10 @@ const fs = require("node:fs");
 const os = require("node:os");
 const path = require("node:path");
 
+// Installation layout version, separate from Git commits. Each layout change
+// adds one explicit migration with a preflight check, a durable backup and
+// progress record, and tests for retry after failure. Never advance the
+// version before verification succeeds. The marker path stays stable.
 const VERSION = 1;
 const home = process.env.AI_CONFIG_WORK_TREE || os.homedir();
 const state = path.join(home, ".local/state/ai-config");
