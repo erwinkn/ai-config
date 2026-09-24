@@ -1,6 +1,6 @@
 ---
 name: code-review
-description: Review code changes and return a prioritized handoff. Use when the user asks to review a diff, branch, commit, PR, or folder.
+description: Review code changes and return a prioritized handoff. Use when the user asks to review a diff, branch, commit, PR, or folder, including a thermo-nuclear (extremely strict code quality) review.
 metadata:
   argument-hint: "[uncommitted | branch <ref> | commit <sha> | pr <ref> | folder <path>...]"
 ---
@@ -58,6 +58,10 @@ Tell the child:
 "You are the code review subagent. Review <target>. Use the code-review skill and follow references/review.md inside it. Return the handoff from that file. Do not edit code. Do not spawn another subagent."
 
 `<target>` names the mode and the ref, for example `the uncommitted changes`, `the current branch against main`, or `PR 123`.
+
+For a thermo-nuclear review, add: "This is a thermo-nuclear review."
+
+When the branch has a decision log, add: "The author's decision log is at <path>. A logged decision is deliberate, not automatically right. Flag it when it is wrong, and look hardest at rows with low confidence." To find the log, run the `decision-audit` skill's `scripts/decision-log.sh path` in the repository.
 
 Run the child on the review model. Return the child's report to the user. Do not summarize it and do not add findings of your own.
 

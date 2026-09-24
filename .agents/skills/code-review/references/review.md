@@ -54,6 +54,10 @@ The same steps, if you run them directly:
 **folder**
 - Read the files under each path. This is a snapshot review, not a diff. Do not report pre-existing issues as new findings.
 
+## Thermo-nuclear mode
+
+When the request asks for a thermo-nuclear review, also read [thermo-nuclear.md](thermo-nuclear.md) and apply it on top of this rubric. It is an extremely strict review of structure and maintainability. The review target from this file replaces its "current branch's changes", you still do not edit code, and you still return the handoff below. Tag its presumptive blockers P1 or higher.
+
 ## Determine what to flag
 
 Flag issues that:

@@ -1,61 +1,65 @@
 ---
 name: decision-audit
-description: Pre-merge audit of the choices made during implementation, not the code itself. Use before any commit, PR, or merge of agent-implemented work, or when the user says "audit your choices", "which decisions did you make", "pride gate", or asks whether you stand behind the work.
+description: Log your decisions as you make them, then audit them before handing work back. Use when you start non-trivial implementation work, before you commit, open a PR, or merge agent-written work, or when the user asks which choices you made.
 metadata:
   argument-hint: "[branch|diff-ref] (defaults to work done in this session)"
 ---
 
-# Decision Audit
+# Decision audit
 
-The user does not review your diff. They review your decisions. Your job here is to make that possible.
+The user does not review your diff. They review your decisions.
 
-The premise: given a concrete, well-specified plan, implementation is reliable — the code lands as specified, no matter how large. Where things go wrong is everywhere the spec was silent and you decided something yourself. Those decisions are the entire attack surface for codebase degradation, and they are invisible in a diff unless someone reads thousands of lines. So instead of the diff, you produce the complete list of decisions you made, flagged by confidence, and the user triages that list.
+A clear plan gets implemented reliably, whatever its size. Problems come from the places where the plan was silent and you chose. Those choices are invisible in a diff, so you log each one when you make it, and before handing back you audit the log. The log is written in the moment because recall at the end is unreliable: the small choices are forgotten, low confidence turns into high once tests pass, and the decision you leave out is the one that mattered.
 
-This audit is a gate. Work is not done, and success must not be declared, until the audit has been produced and the user has triaged it.
+## Record while you work
 
-## When to run
+Log a row at each fork where the request, the plan, or the spec did not decide for you. Write it when you decide, before you move on. The risky kinds:
 
-- Before any commit, PR, or merge of work you implemented — as the final step, after tests pass.
-- When the user asks "which choices did you make?", "are you proud of this?", or invokes this skill directly.
-- On someone else's branch: reconstruct the decisions from the diff and commit history, then audit those the same way.
+- **Symptom fixes.** The failing case passes, but you cannot say why the fix is general. Doubling a buffer stops this crash and leaves the real bug in place.
+- **Interpretations.** The request could mean two things and you picked one.
+- **Scope changes.** Edge cases you left out, features you added because they seemed wanted, inputs you do not handle.
+- **Invented values.** A constant, size, timeout, or limit you chose rather than derived.
+- **Structure.** Where code goes, what you abstracted or duplicated, which existing pattern you extended or bypassed.
+- **Workarounds.** An `if` that routes around a problem instead of expressing the domain.
+- **Swallowed errors.** A catch, default, or retry where the error could have surfaced.
+- **Tests.** What you chose not to test, and any test you weakened or changed to make it pass.
+- **Punts.** Something you noticed and left for later.
 
-## Step 1: Enumerate every decision that was yours
+Do not log steps the spec dictates or choices with one obvious answer.
 
-Go back through the work — the conversation, your plan, the diff — and list every point where the spec, the plan, or the user's request did not fully determine what you did, and you chose. Not a summary of what you built; a list of forks in the road where you picked a branch.
+Run `scripts/decision-log.sh` from this skill's directory by its full path, with the repository you work in as the current directory. The script logs to the repository of the current directory.
 
-Hunt specifically for the high-risk species:
+```sh
+scripts/decision-log.sh add <decision> <instead> <confidence> <why> <evidence>
+scripts/decision-log.sh show
+```
 
-- **Symptom fixes that happened to work.** You changed something, the failing case passed, and you declared victory — but the change addresses this instance, not the underlying cause. (Doubling a buffer "fixes" the crash at hand while the real bug stays dormant.) If you cannot articulate *why* the fix is general, it goes on the list.
-- **Interpretations of ambiguity.** The request could have meant two things; you picked one.
-- **Silently narrowed or expanded scope.** Edge cases you decided were out of scope, features you added because they "seemed wanted", inputs you decided not to handle.
-- **Magic values and thresholds.** Any constant, size, timeout, or limit you invented rather than derived.
-- **Structural choices.** Where you put things, what you abstracted, what you duplicated, which existing pattern you extended vs. bypassed.
-- **Workarounds and special cases.** Any `if` that exists to route around a problem rather than express the domain.
-- **Errors handled by swallowing.** Anywhere you caught, defaulted, or retried instead of surfacing.
-- **Test decisions.** What you chose not to test, and any test you weakened or adjusted to make pass.
-- **Things you punted.** Anything you noticed, thought "not now", and moved past without telling the user.
+| Column | Content |
+| --- | --- |
+| decision | What you chose, in one line. |
+| instead | The main option you did not take. |
+| confidence | `high`, `medium`, or `low`, as you judge it now. |
+| why | The reason, in plain words. |
+| evidence | A pointer, not prose: `file:line`, a commit, a test run, a PR. |
 
-Completeness beats brevity here. A decision you omit is a decision the user cannot catch — the one you're tempted to leave off the list is precisely the one that belongs on it.
+```
+ts                    decision                           instead                        confidence  why                                           evidence
+2026-09-24T09:02:00Z  cap sync retries at 3              make it configurable           low         guessed; no data on failure rates             src/sync.ts:88
+2026-09-24T09:40:00Z  derive cart total from line items  keep the cache, invalidate it  high        three review findings shared the stale cache  commit 3a9f1c2
+```
 
-## Step 2: Report against interest
+The script adds the timestamp. The log is per branch and lives in the Git directory, so Git never tracks it; `decision-log.sh path` prints where.
 
-For each decision, state:
+The log is append-only. When a decision turns out wrong, add a row that starts with `supersedes <ts>:` and says what you do now. Do not edit or delete rows.
 
-1. **The decision** — what you chose, in one sentence.
-2. **What else you could have done** — the road not taken.
-3. **Confidence** — high / medium / low, judged honestly.
-4. **How it would bite** — the concrete scenario in which this choice turns out wrong.
+Other skills write to this log instead of keeping their own. `autoreview` logs each root-cause fix and each rejected finding here.
 
-Order the list least-confident first. Do not defend choices; disclose them. A decision you feel the urge to justify at length is a low-confidence decision — mark it as such and let the user decide. Never round a "it worked on the case at hand" up to "it's correct".
+## Audit before handing back
 
-## Step 3: The pride gate
+Run the audit before you commit, open a PR, or merge work you implemented, and when the user asks for it.
 
-End with a direct verdict: **are you proud of this branch, and would you stand behind every commit in it?**
-
-Answer without ego and without diplomacy. If the honest answer is "mostly, except…", say exactly that and name the exceptions — they are usually items from Step 2 that deserve to be fixed rather than merely disclosed. "Proud" means: nothing in here relies on coincidence, nothing is quietly narrower than what was asked, and you'd make every one of these choices again with full information. If any of that fails, the verdict is not yes.
-
-A "no" or "yes, except" verdict is a good outcome. It's the audit doing its job. Declaring unqualified success on work with dormant issues is the failure mode this entire skill exists to prevent.
-
-## Step 4: Triage and correct
-
-Stop and let the user triage — do not merge, commit, or declare completion on their behalf. When they flag a decision as wrong, treat the correction as a spec update: fix the root cause properly, don't patch the patch. After corrections, re-run the audit on the corrected work (it will be short) so the loop closes on a clean pass.
+1. **Read the log.** When there is no log, reconstruct the decisions from the conversation and the diff, and say that the audit comes from recall. On someone else's branch, reconstruct them from the diff and the commit history.
+2. **Check it against the diff.** Every change that the plan did not dictate must trace to a row. A change with no row is a decision that went unlogged: add the row now and mark it in the report as found late.
+3. **Report least confident first.** For each decision give what you chose, what you could have done instead, the confidence, and how it would go wrong: the concrete case in which this choice turns out to be a mistake. Disclose, do not defend. When you want to justify a choice at length, its confidence is low.
+4. **Answer the pride question.** Are you proud of this work, and would you stand behind every change in it? Proud means nothing relies on coincidence, nothing is quietly narrower than what was asked, and you would make every choice again with full information. When the answer is "yes, except", name the exceptions. They usually deserve a fix, not only a disclosure.
+5. **Stop for triage.** Do not commit, merge, or declare the work done until the user has read the report. When they flag a decision as wrong, fix the root cause, log the correction as a superseding row, and run the audit again. It will be short.

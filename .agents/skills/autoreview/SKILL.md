@@ -9,17 +9,17 @@ metadata:
 
 Run review rounds on a change and fix what they find, until a round comes back clean. Each round has four steps: review, triage, gate, fix.
 
-Pick the target as the `code-review` skill does. Keep a ledger across rounds: each finding, its root cause, and what you did with it.
+Pick the target as the `code-review` skill does. Log each root-cause fix and each rejected finding with the `decision-audit` skill, as you decide it.
 
 ## 1. Review
 
-Run the `code-review` skill on the target. It picks the reviewer model, and it splits very large changes across reviewers by domain.
+Run the `code-review` skill on the target. It picks the reviewer model, and it splits very large changes across reviewers by domain. When the user asks for a thermo-nuclear autoreview, every round is a thermo-nuclear review.
 
 From round 2 on:
 
 - Review the whole change again, fixes included, with a fresh reviewer. A fix can break code that the last round passed, and a new reviewer finds different things.
 - For a `pr` or `commit` target, switch to `branch` mode against the PR base or the commit's parent. The first mode would miss the uncommitted fixes.
-- Give the reviewer the findings you rejected in earlier rounds, each with its reason, as extra instructions: "These were considered and rejected. Raise them again only with new evidence."
+- Give the reviewer the findings you rejected in earlier rounds, each with its reason from the decision log, as extra instructions: "These were considered and rejected. Raise them again only with new evidence."
 
 ## 2. Triage
 
