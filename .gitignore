@@ -11,8 +11,7 @@ __pycache__/
 /.claude/.credentials.json
 /.codex/auth.json
 /.codex/auth.json.*
-/.cursor/mcp.json
-/.cursor/mcp-auth.json
+/.cursor/
 /.config/devin/
 /.config/opencode/
 /.grok/
