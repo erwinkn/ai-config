@@ -21,37 +21,38 @@ function Get-TreePath([string]$Root, [string]$RelativePath) {
     Join-Path $Root ($RelativePath -replace "/", [IO.Path]::DirectorySeparatorChar)
 }
 
-# Move every existing path that the first checkout replaces into the backup
-# folder. Directories are listed too, so a file or link where HEAD has a
-# directory is replaced rather than followed.
-function Move-CheckoutConflicts($Backup) {
+# Find every existing path that the first checkout replaces. A directory that
+# HEAD tracks must already be a real directory: replacing a linked .agents
+# folder, for example, would cut off everything it points to.
+function Find-CheckoutConflicts {
     $listing = (& git "--git-dir=$GitDir" ls-tree -rtz HEAD) -join "`n"
     if ($LASTEXITCODE -ne 0) { throw "Git failed: ls-tree" }
-    $replaced = $null
     foreach ($entry in ($listing -split "`0")) {
         if (-not $entry) { continue }
+        # Each entry is "<mode> <type> <object>`t<path>", and paths keep every character.
         $meta, $relativePath = $entry -split "`t", 2
         $mode, $type, $object = $meta -split " "
-        if ($replaced -and $relativePath.StartsWith("$replaced/")) { continue }
         $targetPath = Get-TreePath $WorkTree $relativePath
         $item = Get-Item -LiteralPath $targetPath -Force -ErrorAction SilentlyContinue
         if (-not $item) { continue }
         $isLink = [bool]($item.Attributes -band [IO.FileAttributes]::ReparsePoint)
         if ($type -eq "tree") {
             if ($item.PSIsContainer -and -not $isLink) { continue }
+            throw "$targetPath must be a directory, not a file or link. Move it aside, then run setup again."
         }
-        elseif ($mode -eq "120000") {
-            $linkTarget = & git "--git-dir=$GitDir" cat-file blob $object
-            if ($isLink -and ("$($item.Target)" -replace "\\", "/") -eq $linkTarget) { continue }
+        if ($mode -eq "120000") {
+            if ($isLink) {
+                # Native output loses trailing newlines, so compare the size too.
+                $linkTarget = "$($item.Target)" -replace "\\", "/"
+                $size = & git "--git-dir=$GitDir" cat-file -s $object
+                $blob = (& git "--git-dir=$GitDir" cat-file blob $object) -join "`n"
+                if ([int]$size -eq [Text.Encoding]::UTF8.GetByteCount($linkTarget) -and $blob -ceq $linkTarget) { continue }
+            }
         }
         elseif (-not $item.PSIsContainer -and -not $isLink) {
             if ((& git "--git-dir=$GitDir" hash-object -- $targetPath) -eq $object) { continue }
         }
-        $backupPath = Get-TreePath $Backup.Root $relativePath
-        New-Item -ItemType Directory -Path (Split-Path -Parent $backupPath) -Force | Out-Null
-        Move-Item -LiteralPath $targetPath -Destination $backupPath
-        $Backup.Files.Add($relativePath)
-        $replaced = $relativePath
+        $relativePath
     }
 }
 
@@ -67,21 +68,46 @@ function Restore-CheckoutConflicts($Backup) {
 }
 
 # Identical copies stay and the others move to the backup folder, so the
-# checkout may overwrite what is left. If it fails, move the copies back and
-# drop the index, which Git writes even after a partial checkout: without an
-# index, the next run retries this checkout instead of updating.
+# checkout may overwrite what is left. Git checks out into a separate index
+# that replaces the real one only on success, so an index always means a
+# finished checkout, even after an interruption. If the checkout fails, the
+# copies move back and the next run retries.
 function Invoke-FirstCheckout {
+    if ($installationTarget) {
+        # An earlier run cloned without checking out: use the validated commit.
+        & git "--git-dir=$GitDir" merge-base --is-ancestor HEAD $installationTarget
+        if ($LASTEXITCODE -ne 0) { throw "$GitDir has commits that its remote does not." }
+        Invoke-AiGit update-ref HEAD $installationTarget
+    }
+    $conflicts = @(Find-CheckoutConflicts)
+    $backupRoot = Join-Path $WorkTree ".local/state/ai/backups"
+    $stamp = (Get-Date).ToUniversalTime().ToString("yyyyMMdd'T'HHmmss'Z'")
     $backup = [PSCustomObject]@{
-        Root = Join-Path $WorkTree (".local/state/ai/backups/" +
-            (Get-Date).ToUniversalTime().ToString("yyyyMMdd'T'HHmmss'Z'"))
+        Root = Join-Path $backupRoot $stamp
         Files = New-Object System.Collections.Generic.List[string]
     }
+    # Each run gets its own backup folder, even a rerun within the same second.
+    for ($suffix = 2; Test-Path -LiteralPath $backup.Root; $suffix++) {
+        $backup.Root = Join-Path $backupRoot "$stamp-$suffix"
+    }
+    $index = Join-Path $GitDir "index"
+    $previousIndex = $env:GIT_INDEX_FILE
     try {
-        Move-CheckoutConflicts $backup
+        foreach ($relativePath in $conflicts) {
+            $backupPath = Get-TreePath $backup.Root $relativePath
+            New-Item -ItemType Directory -Path (Split-Path -Parent $backupPath) -Force | Out-Null
+            Move-Item -LiteralPath (Get-TreePath $WorkTree $relativePath) -Destination $backupPath
+            $backup.Files.Add($relativePath)
+        }
+        Remove-Item -LiteralPath "$index.setup" -Force -ErrorAction SilentlyContinue
+        $env:GIT_INDEX_FILE = "$index.setup"
         Invoke-AiGit checkout -f
+        $env:GIT_INDEX_FILE = $previousIndex
+        Move-Item -LiteralPath "$index.setup" -Destination $index
     }
     catch {
-        Remove-Item -LiteralPath (Join-Path $GitDir "index") -Force -ErrorAction SilentlyContinue
+        $env:GIT_INDEX_FILE = $previousIndex
+        Remove-Item -LiteralPath "$index.setup" -Force -ErrorAction SilentlyContinue
         try { Restore-CheckoutConflicts $backup }
         catch { throw "The checkout failed; copies of the files it replaced are in $($backup.Root). $_" }
         throw "The checkout failed; the files it replaced were restored. $_"

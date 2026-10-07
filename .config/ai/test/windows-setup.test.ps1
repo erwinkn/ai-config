@@ -33,7 +33,21 @@ try {
     Set-Content (Join-Path $target ".codex/AGENTS.md") "local instructions"
     Set-Content (Join-Path $target ".claude/skills/personal/SKILL.md") "personal skill"
     $setup = Join-Path $repo ".config/ai/scripts/setup-windows-ai.ps1"
+    # A file where HEAD has a directory stops setup before any change.
+    Set-Content (Join-Path $target ".agents/skills") "not a directory"
+    $refused = $null
+    try { & $setup -GitDir $env:AI_CONFIG_GIT_DIR -WorkTree $target -RepoUrl $repo -ProfilePath $profilePath }
+    catch { $refused = "$_" }
+    Assert ($refused -like "*must be a directory*") "Setup replaced a file where a directory belongs"
+    Assert ((Get-Content (Join-Path $target ".agents/skills")) -eq "not a directory") "Setup changed the refused file"
+    Assert (-not (Test-Path (Join-Path $env:AI_CONFIG_GIT_DIR "index"))) "A refused setup left an index"
+    Remove-Item (Join-Path $target ".agents/skills")
+    # The next run checks out the newest validated commit, not the earlier clone.
+    Set-Content (Join-Path $repo "resume-proof.txt") "newer commit"
+    Invoke-TestGit -C $repo add resume-proof.txt
+    Invoke-TestGit -C $repo commit -m "Commit after the first clone"
     & $setup -GitDir $env:AI_CONFIG_GIT_DIR -WorkTree $target -RepoUrl $repo -ProfilePath $profilePath
+    Assert (Test-Path (Join-Path $target "resume-proof.txt")) "Setup checked out a stale commit"
     Assert ((Get-Content (Join-Path $target ".local/state/ai-config/install-version")) -eq "1") "Missing installation version"
     Assert ((Get-Item (Join-Path $target ".claude/skills")).LinkType -eq "SymbolicLink") "Claude skills must be a real link"
     Assert ((Get-Item (Join-Path $target ".codex/AGENTS.md")).LinkType -eq "SymbolicLink") "Codex instructions must be a real link"

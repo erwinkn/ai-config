@@ -183,20 +183,29 @@ function copiesFixture(t) {
   write(f.home, ".agents/skills/example/SKILL.md", "Local skill\n");
   write(f.home, ".agents/skills/locked/SKILL.md", "Local locked skill\n");
   write(f.home, ".claude-skills/personal/SKILL.md", "Personal skill\n");
+  // Paths and link targets must be compared byte for byte.
+  write(f.repo, "note ", "Shared note\n");
+  write(f.home, "note ", "Local note\n");
+  fs.symlinkSync("target", path.join(f.repo, ".link"));
+  fs.symlinkSync("target\n", path.join(f.home, ".link"));
+  run(f, "git", ["add", "."]);
+  run(f, "git", ["commit", "-m", "Exact paths"]);
   return f;
 }
 
-function assertCheckedOut(f) {
-  assert.equal(text(f, ".agents/skills/example/SKILL.md"), "Shared skill\n");
+function assertCheckedOut(f, example = "Shared skill\n") {
+  assert.equal(text(f, ".agents/skills/example/SKILL.md"), example);
   assert.equal(text(f, ".agents/skills/same/SKILL.md"), "Same skill\n");
   assert.equal(text(f, ".agents/skills/locked/SKILL.md"), "Shared locked skill\n");
   assert.equal(fs.readlinkSync(path.join(f.home, ".claude-skills")), "../.agents/skills");
   const backups = path.join(f.home, ".local/state/ai/backups");
   const backup = (file) => fs.readdirSync(backups)
-    .map(name => path.join(backups, name, file)).find(fs.existsSync);
+    .map(name => path.join(backups, name, file)).find(p => fs.lstatSync(p, { throwIfNoEntry: false }));
   assert.equal(fs.readFileSync(backup(".agents/skills/example/SKILL.md"), "utf8"), "Local skill\n");
   assert.equal(fs.readFileSync(backup(".agents/skills/locked/SKILL.md"), "utf8"), "Local locked skill\n");
   assert.equal(fs.readFileSync(backup(".claude-skills/personal/SKILL.md"), "utf8"), "Personal skill\n");
+  assert.equal(fs.readFileSync(backup("note "), "utf8"), "Local note\n");
+  assert.equal(fs.readlinkSync(backup(".link")), "target\n");
   assert.equal(backup(".agents/skills/same/SKILL.md"), undefined);
   const status = run(f, "git", [`--git-dir=${f.home}/.ai-config`, `--work-tree=${f.home}`,
     "status", "--porcelain", "--untracked-files=no"]);
@@ -210,14 +219,17 @@ test("first setup accepts identical copies and backs up the others", (t) => {
   assertCheckedOut(f);
 });
 
-test("a symlink in a tracked directory's place is replaced, not followed", (t) => {
+test("a symlinked tracked directory stops setup before any change", (t) => {
   const f = fixture(t, "Linux");
-  write(f.home, "dotfiles/example/SKILL.md", "Dotfiles skill\n");
-  fs.mkdirSync(path.join(f.home, ".agents/skills"), { recursive: true });
-  fs.symlinkSync("../../dotfiles/example", path.join(f.home, ".agents/skills/example"));
-  setup(f);
-  assert.equal(text(f, ".agents/skills/example/SKILL.md"), "Shared skill\n");
-  assert.equal(text(f, "dotfiles/example/SKILL.md"), "Dotfiles skill\n");
+  write(f.home, "dotfiles/agents/skills/example/SKILL.md", "Dotfiles skill\n");
+  write(f.home, "dotfiles/agents/.skill-lock.json", '{"device":true}\n');
+  fs.symlinkSync("dotfiles/agents", path.join(f.home, ".agents"));
+  const result = run(f, path.join(f.repo, ".config/ai/bin/setup-unix"), [], false);
+  assert.notEqual(result.status, 0);
+  assert.match(result.stderr, /\.agents must be a directory/);
+  assert.equal(fs.readlinkSync(path.join(f.home, ".agents")), "dotfiles/agents");
+  assert.equal(text(f, ".agents/skills/example/SKILL.md"), "Dotfiles skill\n");
+  assert.equal(fs.existsSync(path.join(f.home, ".ai-config/index")), false);
 });
 
 test("a failed first checkout restores local copies and the next run finishes it", (t) => {
@@ -239,11 +251,34 @@ test("a failed first checkout restores local copies and the next run finishes it
   assertCheckedOut(f);
 });
 
+test("an interrupted first checkout is retried, not taken as finished", (t) => {
+  const f = copiesFixture(t);
+  f.env.TMPDIR = f.root;
+  const git = spawnSync("which", ["git"], { encoding: "utf8" }).stdout.trim();
+  // Git writes the index even when a checkout stops partway. Simulate a setup
+  // killed right after that: write the index, check nothing out, then kill it.
+  write(f.bin, "git", `#!/bin/bash
+if [[ "\${@: -2:1} \${@: -1}" == "checkout -f" && ! -e "$HOME/interrupted" ]]; then
+  touch "$HOME/interrupted"
+  "${git}" "\${@:1:$#-2}" read-tree HEAD
+  kill -9 $PPID
+  exit 1
+fi
+exec "${git}" "$@"
+`, 0o755);
+  const killed = run(f, path.join(f.repo, ".config/ai/bin/setup-unix"), [], false);
+  assert.equal(killed.signal, "SIGKILL");
+  setup(f);
+  assertCheckedOut(f);
+});
+
 test("setup finishes a Git directory that was never checked out", (t) => {
   const f = copiesFixture(t);
   run(f, "git", ["clone", "--bare", f.repo, path.join(f.home, ".ai-config")]);
+  write(f.repo, ".agents/skills/example/SKILL.md", "Newer shared skill\n");
+  run(f, "git", ["commit", "-am", "Newer shared skill"]);
   setup(f);
-  assertCheckedOut(f);
+  assertCheckedOut(f, "Newer shared skill\n");
 });
 
 function legacyFixture(t) {

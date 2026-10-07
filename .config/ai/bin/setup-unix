@@ -14,6 +14,12 @@ ai_git_dir=${AI_CONFIG_GIT_DIR:-"$HOME/.ai-config"}
 ai_work_tree=${AI_CONFIG_WORK_TREE:-"$HOME"}
 timestamp=$(date -u +%Y%m%dT%H%M%SZ)
 backup_root="$HOME/.local/state/ai/backups/$timestamp"
+# Each run gets its own backup folder, even a rerun within the same second.
+backup_suffix=1
+while [[ -e "$backup_root" ]]; do
+    backup_suffix=$((backup_suffix + 1))
+    backup_root="$HOME/.local/state/ai/backups/$timestamp-$backup_suffix"
+done
 temporary_root=$(mktemp -d "${TMPDIR:-/tmp}/ai-setup.XXXXXX")
 captured_root="$temporary_root/config"
 captured_active_root="$temporary_root/active"
@@ -94,7 +100,8 @@ backup_file() {
     local destination="$backup_root/$relative"
     mkdir -p "$(dirname "$destination")"
     if [[ -e "$destination" || -L "$destination" ]]; then
-        return
+        echo "setup: the backup $destination already exists." >&2
+        return 1
     fi
     cp -pR "$source" "$destination"
 }
@@ -150,17 +157,21 @@ restore_skill_lock() {
         "$HOME/.agents/.skill-lock.json"
 }
 
-# Back up every existing path that the first checkout replaces. Directories
-# are listed too, so a file or symlink where HEAD has a directory is replaced
-# rather than followed.
+# Back up every existing path that the first checkout replaces. A directory
+# that HEAD tracks must already be a real directory: replacing a symlinked
+# ~/.agents, for example, would cut off everything it points to.
 backup_checkout_conflicts() {
-    local mode type object relative target replaced=
+    local entry meta mode type object relative target link
     checkout_conflicts=()
-    while IFS=$' \t' read -r -d '' mode type object relative; do
+    while IFS= read -r -d '' entry; do
+        # Each entry is "<mode> <type> <object>\t<path>", and paths keep every byte.
+        meta=${entry%%$'\t'*}
+        relative=${entry#*$'\t'}
+        mode=${meta%% *}
+        type=${meta#* }
+        type=${type%% *}
+        object=${meta##* }
         target="$ai_work_tree/$relative"
-        if [[ -n $replaced && $relative == "$replaced"/* ]]; then
-            continue
-        fi
         if [[ ! -e "$target" && ! -L "$target" ]]; then
             continue
         fi
@@ -168,18 +179,24 @@ backup_checkout_conflicts() {
             if [[ -d "$target" && ! -L "$target" ]]; then
                 continue
             fi
-        elif [[ $mode == 120000 ]]; then
-            if [[ -L "$target" && $(git --git-dir="$ai_git_dir" cat-file blob "$object") \
-                == "$(readlink "$target")" ]]; then
+            echo "setup: $target must be a directory, not a file or symbolic link." >&2
+            echo "Move it aside, then run setup again." >&2
+            exit 1
+        fi
+        if [[ $mode == 120000 && -L "$target" ]]; then
+            # Command substitution drops trailing newlines, so end with a sentinel.
+            link=$(readlink "$target"; printf x)
+            link=${link%$'\n'x}
+            if [[ $(printf '%s' "$link" | git --git-dir="$ai_git_dir" hash-object --no-filters --stdin) \
+                == "$object" ]]; then
                 continue
             fi
-        elif [[ -f "$target" && ! -L "$target" \
+        elif [[ $mode != 120000 && -f "$target" && ! -L "$target" \
             && $(git --git-dir="$ai_git_dir" hash-object -- "$target") == "$object" ]]; then
             continue
         fi
         backup_file "$target" "$relative"
         checkout_conflicts+=("$relative")
-        replaced=$relative
     done < <(git --git-dir="$ai_git_dir" ls-tree -rtz HEAD)
 }
 
@@ -195,13 +212,24 @@ restore_checkout_conflicts() {
 }
 
 # Identical copies are accepted as they are, and the others were backed up, so
-# the checkout may overwrite them. If it fails, put the copies back and drop
-# the index, which Git writes even after a partial checkout: without an index,
-# the next run retries this checkout instead of updating.
+# the checkout may overwrite them. Git checks out into a separate index that
+# replaces the real one only on success, so an index always means a finished
+# checkout, even after an interruption. If the checkout fails, the replaced
+# files go back and the next run retries.
 first_checkout() {
+    local index="$ai_git_dir/index"
+    if [[ -n ${installation_target:-} ]]; then
+        # An earlier run cloned without checking out: use the validated commit.
+        if ! home_git merge-base --is-ancestor HEAD "$installation_target"; then
+            echo "setup: $ai_git_dir has commits that its remote does not." >&2
+            exit 1
+        fi
+        home_git update-ref HEAD "$installation_target"
+    fi
     backup_checkout_conflicts
-    if ! home_git checkout -f; then
-        rm -f "$ai_git_dir/index"
+    rm -f "$index.setup"
+    if ! GIT_INDEX_FILE="$index.setup" home_git checkout -f; then
+        rm -f "$index.setup"
         if restore_checkout_conflicts; then
             echo "setup: the checkout failed; the files it replaced were restored." >&2
         else
@@ -209,6 +237,7 @@ first_checkout() {
         fi
         exit 1
     fi
+    mv "$index.setup" "$index"
 }
 
 add_path_entry() {
