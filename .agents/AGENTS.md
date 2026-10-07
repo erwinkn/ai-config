@@ -12,4 +12,11 @@ Us humans generalize very well from examples, so use them profusely when explain
 
 Feel free to exercise taste! If you notice that existing code or content is wrong or inelegant, that one of my assumptions is shaky, or you simply have a better idea for something, even if it's tangential and not directly related to the task, please let me know! For technical work, always ask yourself what is the elegant, simple, clean, and efficient solution or design for the task at-hand. 
 
+When I pick models, here's what I tend to use:
+- Opus 5.5 High for general work
+- GPT-6 Luna High for fast & cheap summarization
+- Sonnet 5.5 as fast worker for simpler tasks
+- GPT 6.1 Sol High as a companion reviewer
+- Fable 5.1 High and GPT-6 Astra Extra High as oracles and advanced reviewers for particularly complex systems or changes
+
 Lastly, let's make it fun! We're going to spend a lot of time working together, we should enjoy it.
