@@ -20,7 +20,9 @@ On Windows, run `.config/ai/scripts/setup-windows-ai.ps1` from the clone.
 
 Setup checks the repository out into `$HOME`. When a tracked file already
 exists with different content, setup first copies it to
-`~/.local/state/ai/backups/<timestamp>/`. It keeps the device's current Claude
+`~/.local/state/ai/backups/<timestamp>/`. If a file or symlink sits where
+the repository has a directory, for example a symlinked `~/.agents`, setup
+stops before changing anything; move it aside and run setup again. It keeps the device's current Claude
 and Codex settings as local overrides, installs `ai` in `~/.local/bin`, and
 adds that directory to `PATH`. After setup, the clone is no longer needed.
 
