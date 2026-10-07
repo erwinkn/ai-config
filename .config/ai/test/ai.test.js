@@ -473,6 +473,15 @@ test("diff reports clean active configuration", (t) => {
   assert.equal((result.stdout.match(/ {2}clean/g) ?? []).length, 2);
 });
 
+test("shared settings contain no device-specific home paths", () => {
+  // Homes differ per device (/Users/erwin, /home/erwin), so such paths
+  // belong in the local layer.
+  for (const file of ["claude.json", "codex.toml"]) {
+    const shared = fs.readFileSync(path.resolve(__dirname, "../shared", file), "utf8");
+    assert.doesNotMatch(shared, /\/(Users|home)\/[^/"]+\//, file);
+  }
+});
+
 test("diff explains formatting-only configuration drift", (t) => {
   const fixture = createFixture(t);
   run(fixture, ["apply"]);
