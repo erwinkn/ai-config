@@ -1,7 +1,3 @@
 {
-  "mcpServers": {
-    "executor": {
-      "url": "https://executor.erwinkn.com/mcp"
-    }
-  }
+  "mcpServers": {}
 }

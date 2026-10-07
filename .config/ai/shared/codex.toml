@@ -49,11 +49,6 @@ default_mode_request_user_input = true
 computer_use = true
 hooks = true
 
-[mcp_servers.executor]
-url = "https://executor.erwinkn.com/mcp"
-auth = "oauth"
-oauth_resource = "https://executor.erwinkn.com/mcp"
-
 [plugins."coderabbit@openai-curated"]
 enabled = true
 
