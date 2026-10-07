@@ -26,11 +26,23 @@ try {
     Set-Content (Join-Path $repo ".config/ai/shared/codex.toml") 'model = "shared"'
     Invoke-TestGit -C $repo add .config/ai/shared
     Invoke-TestGit -C $repo commit -m "Portable settings fixture"
+    # Plain copies from before setup: identical, edited, and real files where links belong.
+    New-Item -ItemType Directory -Path (Join-Path $target ".agents"), (Join-Path $target ".codex"), (Join-Path $target ".claude/skills/personal") -Force | Out-Null
+    Copy-Item (Join-Path $repo ".agents/AGENTS.md") (Join-Path $target ".agents/AGENTS.md")
+    Set-Content (Join-Path $target ".gitignore") "local ignore"
+    Set-Content (Join-Path $target ".codex/AGENTS.md") "local instructions"
+    Set-Content (Join-Path $target ".claude/skills/personal/SKILL.md") "personal skill"
     $setup = Join-Path $repo ".config/ai/scripts/setup-windows-ai.ps1"
     & $setup -GitDir $env:AI_CONFIG_GIT_DIR -WorkTree $target -RepoUrl $repo -ProfilePath $profilePath
     Assert ((Get-Content (Join-Path $target ".local/state/ai-config/install-version")) -eq "1") "Missing installation version"
     Assert ((Get-Item (Join-Path $target ".claude/skills")).LinkType -eq "SymbolicLink") "Claude skills must be a real link"
     Assert ((Get-Item (Join-Path $target ".codex/AGENTS.md")).LinkType -eq "SymbolicLink") "Codex instructions must be a real link"
+    $backup = @(Get-ChildItem (Join-Path $target ".local/state/ai/backups"))[0].FullName
+    Assert ((Get-Content (Join-Path $backup ".gitignore")) -eq "local ignore") "Setup lost an edited copy"
+    Assert ((Get-Content (Join-Path $backup ".codex/AGENTS.md")) -eq "local instructions") "Setup lost a file in a link's place"
+    Assert ((Get-Content (Join-Path $backup ".claude/skills/personal/SKILL.md")) -eq "personal skill") "Setup lost a directory in a link's place"
+    Assert (-not (Test-Path (Join-Path $backup ".agents/AGENTS.md"))) "Setup backed up an identical copy"
+    Assert ((& git "--git-dir=$env:AI_CONFIG_GIT_DIR" "--work-tree=$target" status --porcelain --untracked-files=no) -eq $null) "The first checkout is not clean"
     $branch = & git "--git-dir=$env:AI_CONFIG_GIT_DIR" symbolic-ref --short HEAD
     Assert ((& git "--git-dir=$env:AI_CONFIG_GIT_DIR" config "branch.$branch.merge") -eq "refs/heads/$branch") "The mirror branch must track origin"
     . $profilePath

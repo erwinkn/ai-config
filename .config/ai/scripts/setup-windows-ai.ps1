@@ -17,37 +17,76 @@ function Invoke-AiGit {
     if ($LASTEXITCODE -ne 0) { throw "Git failed: $Args" }
 }
 
-function Backup-ConflictingTrackedFiles {
-    $trackedFiles = & git "--git-dir=$GitDir" ls-tree -r --name-only HEAD
-    $backupRoot = Join-Path $HOME (".ai-config-backup-" + (Get-Date -Format "yyyyMMdd-HHmmss"))
-    $backedUpFiles = New-Object System.Collections.Generic.List[string]
+function Get-TreePath([string]$Root, [string]$RelativePath) {
+    Join-Path $Root ($RelativePath -replace "/", [IO.Path]::DirectorySeparatorChar)
+}
 
-    foreach ($relativePath in $trackedFiles) {
-        $targetPath = Join-Path $WorkTree ($relativePath -replace "/", [IO.Path]::DirectorySeparatorChar)
-        if (-not (Test-Path -LiteralPath $targetPath -PathType Leaf)) {
-            continue
+# Move every existing path that the first checkout replaces into the backup
+# folder. Directories are listed too, so a file or link where HEAD has a
+# directory is replaced rather than followed.
+function Move-CheckoutConflicts($Backup) {
+    $listing = (& git "--git-dir=$GitDir" ls-tree -rtz HEAD) -join "`n"
+    if ($LASTEXITCODE -ne 0) { throw "Git failed: ls-tree" }
+    $replaced = $null
+    foreach ($entry in ($listing -split "`0")) {
+        if (-not $entry) { continue }
+        $meta, $relativePath = $entry -split "`t", 2
+        $mode, $type, $object = $meta -split " "
+        if ($replaced -and $relativePath.StartsWith("$replaced/")) { continue }
+        $targetPath = Get-TreePath $WorkTree $relativePath
+        $item = Get-Item -LiteralPath $targetPath -Force -ErrorAction SilentlyContinue
+        if (-not $item) { continue }
+        $isLink = [bool]($item.Attributes -band [IO.FileAttributes]::ReparsePoint)
+        if ($type -eq "tree") {
+            if ($item.PSIsContainer -and -not $isLink) { continue }
         }
-
-        $repoBlob = & git "--git-dir=$GitDir" show ("HEAD:{0}" -f $relativePath)
-        $workingCopy = [IO.File]::ReadAllText($targetPath)
-        if ($repoBlob -eq $workingCopy) {
-            continue
+        elseif ($mode -eq "120000") {
+            $linkTarget = & git "--git-dir=$GitDir" cat-file blob $object
+            if ($isLink -and ("$($item.Target)" -replace "\\", "/") -eq $linkTarget) { continue }
         }
-
-        $backupPath = Join-Path $backupRoot ($relativePath -replace "/", [IO.Path]::DirectorySeparatorChar)
-        $backupDir = Split-Path -Parent $backupPath
-        if (-not (Test-Path -LiteralPath $backupDir)) {
-            New-Item -ItemType Directory -Path $backupDir -Force | Out-Null
+        elseif (-not $item.PSIsContainer -and -not $isLink) {
+            if ((& git "--git-dir=$GitDir" hash-object -- $targetPath) -eq $object) { continue }
         }
-
-        Move-Item -LiteralPath $targetPath -Destination $backupPath -Force
-        $backedUpFiles.Add($relativePath) | Out-Null
+        $backupPath = Get-TreePath $Backup.Root $relativePath
+        New-Item -ItemType Directory -Path (Split-Path -Parent $backupPath) -Force | Out-Null
+        Move-Item -LiteralPath $targetPath -Destination $backupPath
+        $Backup.Files.Add($relativePath)
+        $replaced = $relativePath
     }
+}
 
-    return [PSCustomObject]@{
-        Root = $backupRoot
-        Files = $backedUpFiles
+function Restore-CheckoutConflicts($Backup) {
+    foreach ($relativePath in $Backup.Files) {
+        $targetPath = Get-TreePath $WorkTree $relativePath
+        $item = Get-Item -LiteralPath $targetPath -Force -ErrorAction SilentlyContinue
+        # Unlike Remove-Item in Windows PowerShell, these never follow links.
+        if ($item -and $item.PSIsContainer) { [IO.Directory]::Delete($targetPath, $true) }
+        elseif ($item) { [IO.File]::Delete($targetPath) }
+        Move-Item -LiteralPath (Get-TreePath $Backup.Root $relativePath) -Destination $targetPath
     }
+}
+
+# Identical copies stay and the others move to the backup folder, so the
+# checkout may overwrite what is left. If it fails, move the copies back and
+# drop the index, which Git writes even after a partial checkout: without an
+# index, the next run retries this checkout instead of updating.
+function Invoke-FirstCheckout {
+    $backup = [PSCustomObject]@{
+        Root = Join-Path $WorkTree (".local/state/ai/backups/" +
+            (Get-Date).ToUniversalTime().ToString("yyyyMMdd'T'HHmmss'Z'"))
+        Files = New-Object System.Collections.Generic.List[string]
+    }
+    try {
+        Move-CheckoutConflicts $backup
+        Invoke-AiGit checkout -f
+    }
+    catch {
+        Remove-Item -LiteralPath (Join-Path $GitDir "index") -Force -ErrorAction SilentlyContinue
+        try { Restore-CheckoutConflicts $backup }
+        catch { throw "The checkout failed; copies of the files it replaced are in $($backup.Root). $_" }
+        throw "The checkout failed; the files it replaced were restored. $_"
+    }
+    return $backup
 }
 
 function Sync-LocalProfileSnippet {
@@ -135,8 +174,10 @@ try {
         & git clone --bare $RepoUrl $GitDir
         if ($LASTEXITCODE -ne 0) { throw "Git clone failed." }
         Invoke-AiGit config core.symlinks true
-        $backup = Backup-ConflictingTrackedFiles
-        Invoke-AiGit checkout
+    }
+    if (-not (Test-Path -LiteralPath (Join-Path $GitDir "index"))) {
+        # A new clone, or one that an earlier run could not check out.
+        $backup = Invoke-FirstCheckout
     }
     else {
         Invoke-AiGit merge --ff-only $installationTarget

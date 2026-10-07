@@ -168,6 +168,84 @@ test("Linux rejects old Node before config writes and never runs Homebrew", (t) 
   assert.deepEqual(fs.readdirSync(f.home), []);
 });
 
+// A device that already has plain copies of the configuration, some identical
+// and some edited, but no Git directory yet.
+function copiesFixture(t) {
+  const f = fixture(t, "Linux");
+  write(f.repo, ".agents/skills/same/SKILL.md", "Same skill\n");
+  write(f.repo, ".agents/skills/locked/SKILL.md", "Shared locked skill\n");
+  fs.symlinkSync("../.agents/skills", path.join(f.repo, ".claude-skills"));
+  run(f, "git", ["add", "."]);
+  run(f, "git", ["commit", "-m", "More shared files"]);
+  for (const file of [".agents/skills/same/SKILL.md", ".config/ai/shared/codex.toml", ".config/ai/bin/ai"]) {
+    write(f.home, file, fs.readFileSync(path.join(f.repo, file)));
+  }
+  write(f.home, ".agents/skills/example/SKILL.md", "Local skill\n");
+  write(f.home, ".agents/skills/locked/SKILL.md", "Local locked skill\n");
+  write(f.home, ".claude-skills/personal/SKILL.md", "Personal skill\n");
+  return f;
+}
+
+function assertCheckedOut(f) {
+  assert.equal(text(f, ".agents/skills/example/SKILL.md"), "Shared skill\n");
+  assert.equal(text(f, ".agents/skills/same/SKILL.md"), "Same skill\n");
+  assert.equal(text(f, ".agents/skills/locked/SKILL.md"), "Shared locked skill\n");
+  assert.equal(fs.readlinkSync(path.join(f.home, ".claude-skills")), "../.agents/skills");
+  const backups = path.join(f.home, ".local/state/ai/backups");
+  const backup = (file) => fs.readdirSync(backups)
+    .map(name => path.join(backups, name, file)).find(fs.existsSync);
+  assert.equal(fs.readFileSync(backup(".agents/skills/example/SKILL.md"), "utf8"), "Local skill\n");
+  assert.equal(fs.readFileSync(backup(".agents/skills/locked/SKILL.md"), "utf8"), "Local locked skill\n");
+  assert.equal(fs.readFileSync(backup(".claude-skills/personal/SKILL.md"), "utf8"), "Personal skill\n");
+  assert.equal(backup(".agents/skills/same/SKILL.md"), undefined);
+  const status = run(f, "git", [`--git-dir=${f.home}/.ai-config`, `--work-tree=${f.home}`,
+    "status", "--porcelain", "--untracked-files=no"]);
+  assert.equal(status.stdout, "");
+  run(f, path.join(f.home, ".local/bin/ai"), ["status"]);
+}
+
+test("first setup accepts identical copies and backs up the others", (t) => {
+  const f = copiesFixture(t);
+  setup(f);
+  assertCheckedOut(f);
+});
+
+test("a symlink in a tracked directory's place is replaced, not followed", (t) => {
+  const f = fixture(t, "Linux");
+  write(f.home, "dotfiles/example/SKILL.md", "Dotfiles skill\n");
+  fs.mkdirSync(path.join(f.home, ".agents/skills"), { recursive: true });
+  fs.symlinkSync("../../dotfiles/example", path.join(f.home, ".agents/skills/example"));
+  setup(f);
+  assert.equal(text(f, ".agents/skills/example/SKILL.md"), "Shared skill\n");
+  assert.equal(text(f, "dotfiles/example/SKILL.md"), "Dotfiles skill\n");
+});
+
+test("a failed first checkout restores local copies and the next run finishes it", (t) => {
+  if (process.getuid?.() === 0) return t.skip("root ignores directory permissions");
+  const f = copiesFixture(t);
+  const locked = path.join(f.home, ".agents/skills/locked");
+  fs.chmodSync(locked, 0o555);
+  try {
+    const failed = run(f, path.join(f.repo, ".config/ai/bin/setup-unix"), [], false);
+    assert.notEqual(failed.status, 0);
+    assert.match(failed.stderr, /the checkout failed/);
+  } finally {
+    fs.chmodSync(locked, 0o755);
+  }
+  assert.equal(text(f, ".agents/skills/example/SKILL.md"), "Local skill\n");
+  assert.equal(text(f, ".agents/skills/locked/SKILL.md"), "Local locked skill\n");
+  assert.equal(text(f, ".claude-skills/personal/SKILL.md"), "Personal skill\n");
+  setup(f);
+  assertCheckedOut(f);
+});
+
+test("setup finishes a Git directory that was never checked out", (t) => {
+  const f = copiesFixture(t);
+  run(f, "git", ["clone", "--bare", f.repo, path.join(f.home, ".ai-config")]);
+  setup(f);
+  assertCheckedOut(f);
+});
+
 function legacyFixture(t) {
   const f = fixture(t, "Linux");
   const current = run(f, "git", ["rev-parse", "HEAD"]).stdout.trim();

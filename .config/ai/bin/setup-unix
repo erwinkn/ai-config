@@ -150,24 +150,65 @@ restore_skill_lock() {
         "$HOME/.agents/.skill-lock.json"
 }
 
+# Back up every existing path that the first checkout replaces. Directories
+# are listed too, so a file or symlink where HEAD has a directory is replaced
+# rather than followed.
 backup_checkout_conflicts() {
-    local expected="$temporary_root/expected"
-    local relative target
-    while IFS= read -r -d '' relative; do
+    local mode type object relative target replaced=
+    checkout_conflicts=()
+    while IFS=$' \t' read -r -d '' mode type object relative; do
         target="$ai_work_tree/$relative"
+        if [[ -n $replaced && $relative == "$replaced"/* ]]; then
+            continue
+        fi
         if [[ ! -e "$target" && ! -L "$target" ]]; then
             continue
         fi
-        git --git-dir="$ai_git_dir" show "HEAD:$relative" > "$expected"
-        if [[ -f "$target" && ! -L "$target" ]] && cmp -s "$expected" "$target"; then
-            continue
-        fi
-        if [[ -L "$target" ]] && [[ $(cat "$expected") == "$(readlink "$target")" ]]; then
+        if [[ $type == tree ]]; then
+            if [[ -d "$target" && ! -L "$target" ]]; then
+                continue
+            fi
+        elif [[ $mode == 120000 ]]; then
+            if [[ -L "$target" && $(git --git-dir="$ai_git_dir" cat-file blob "$object") \
+                == "$(readlink "$target")" ]]; then
+                continue
+            fi
+        elif [[ -f "$target" && ! -L "$target" \
+            && $(git --git-dir="$ai_git_dir" hash-object -- "$target") == "$object" ]]; then
             continue
         fi
         backup_file "$target" "$relative"
-        rm -rf "$target"
-    done < <(git --git-dir="$ai_git_dir" ls-tree -rz --name-only HEAD)
+        checkout_conflicts+=("$relative")
+        replaced=$relative
+    done < <(git --git-dir="$ai_git_dir" ls-tree -rtz HEAD)
+}
+
+restore_checkout_conflicts() {
+    local relative target status=0
+    for relative in ${checkout_conflicts[@]+"${checkout_conflicts[@]}"}; do
+        target="$ai_work_tree/$relative"
+        if ! { rm -rf "$target" && cp -pR "$backup_root/$relative" "$target"; }; then
+            status=1
+        fi
+    done
+    return $status
+}
+
+# Identical copies are accepted as they are, and the others were backed up, so
+# the checkout may overwrite them. If it fails, put the copies back and drop
+# the index, which Git writes even after a partial checkout: without an index,
+# the next run retries this checkout instead of updating.
+first_checkout() {
+    backup_checkout_conflicts
+    if ! home_git checkout -f; then
+        rm -f "$ai_git_dir/index"
+        if restore_checkout_conflicts; then
+            echo "setup: the checkout failed; the files it replaced were restored." >&2
+        else
+            echo "setup: the checkout failed; copies of the files it replaced are in $backup_root" >&2
+        fi
+        exit 1
+    fi
 }
 
 add_path_entry() {
@@ -249,13 +290,14 @@ if [[ ! -d "$ai_git_dir" ]]; then
     if [[ -n "$origin_url" ]]; then
         git --git-dir="$ai_git_dir" remote set-url origin "$origin_url"
     fi
-    backup_checkout_conflicts
-    home_git checkout
+elif [[ ! -f "$ai_git_dir/HEAD" ]]; then
+    echo "setup: $ai_git_dir exists but is not a Git repository." >&2
+    exit 1
+fi
+if [[ ! -f "$ai_git_dir/index" ]]; then
+    # A new clone, or one that an earlier run could not check out.
+    first_checkout
 else
-    if [[ ! -f "$ai_git_dir/HEAD" ]]; then
-        echo "setup: $ai_git_dir exists but is not a Git repository." >&2
-        exit 1
-    fi
     restore_active_on_error=1
     for relative in \
         .claude/settings.json \
