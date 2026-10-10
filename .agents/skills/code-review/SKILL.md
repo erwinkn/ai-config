@@ -25,7 +25,7 @@ Review in this conversation only when all three conditions hold:
 2. The conversation is fresh: an early turn with little context.
 3. The checkout is clean: `git status --porcelain` lists no changes to tracked files.
 
-Otherwise, start a reviewer with a fresh context on the same checkout, using whatever your tool provides: a subagent, a new session, or another agent's CLI run non-interactively. For example, `codex exec --sandbox read-only "<prompt>"` or `claude -p "<prompt>"`. If someone else dispatches agents for you, ask them for the reviewer. The reviewer runs the review and returns the handoff. It must not start further reviewers.
+Otherwise, start a reviewer with a fresh context on the same checkout through your environment's usual way of starting another agent: a subagent or a new session. If someone else dispatches agents for you, ask them for the reviewer. The reviewer runs the review and returns the handoff. It must not start further reviewers.
 
 Do not edit files or switch branches while a reviewer runs. It shares your checkout.
 
